@@ -1,0 +1,1045 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Knowledge Browser</title>
+<script>
+(() => {
+  try {
+    const savedTheme = localStorage.getItem("knowledgeBrowser:displayTheme");
+    document.documentElement.dataset.displayTheme = savedTheme === "dark" ? "dark" : "light";
+  } catch (_) {
+    document.documentElement.dataset.displayTheme = "light";
+  }
+})();
+</script>
+<style>
+  :root,
+  html[data-display-theme="light"] {
+    color-scheme: light;
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --panel-soft: #f1f5f9;
+    --control: #ffffff;
+    --line: #d8dee8;
+    --line-strong: #b8c2d0;
+    --text: #1f2937;
+    --muted: #64748b;
+    --accent: #2563eb;
+    --accent-text: #1d4ed8;
+    --accent-soft: #dbeafe;
+    --mark: #fef08a;
+    --snippet: #475569;
+    --dir-text: #334155;
+    --preview-bar: rgba(255, 255, 255, 0.9);
+    --focus-ring: rgba(37, 99, 235, 0.13);
+    --shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+  }
+
+  html[data-display-theme="dark"] {
+    color-scheme: dark;
+    --bg: #101114;
+    --panel: #181a20;
+    --panel-soft: #252a33;
+    --control: #1f232b;
+    --line: #343a46;
+    --line-strong: #566071;
+    --text: #e6e8ee;
+    --muted: #9aa4b2;
+    --accent: #7ab7ff;
+    --accent-text: #cfe6ff;
+    --accent-soft: rgba(122, 183, 255, 0.18);
+    --mark: #76651f;
+    --snippet: #bcc5d3;
+    --dir-text: #d4d9e2;
+    --preview-bar: rgba(24, 26, 32, 0.92);
+    --focus-ring: rgba(122, 183, 255, 0.22);
+    --shadow: 0 18px 40px rgba(0, 0, 0, 0.34);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  button, input { font: inherit; }
+  button { color: inherit; }
+
+  .app {
+    display: grid;
+    grid-template-columns: minmax(300px, 390px) minmax(0, 1fr);
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .sidebar {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+    overscroll-behavior: contain;
+    border-right: 1px solid var(--line);
+    background: var(--panel);
+  }
+
+  .brand {
+    padding: 18px 18px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .brand h1 {
+    margin: 0;
+    font-size: 18px;
+    line-height: 1.2;
+    letter-spacing: 0;
+  }
+
+  .brand p {
+    margin: 6px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .search {
+    position: relative;
+    padding: 14px 14px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .search-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  #q {
+    width: 100%;
+    min-width: 0;
+    height: 38px;
+    padding: 0 12px;
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    outline: none;
+    background: var(--control);
+    color: var(--text);
+  }
+
+  #q:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--focus-ring);
+  }
+
+  .icon-button {
+    width: 38px;
+    height: 38px;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    background: var(--control);
+    cursor: pointer;
+  }
+
+  .icon-button:hover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .search-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 8px;
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  #suggest-list {
+    position: absolute;
+    top: 58px;
+    left: 14px;
+    right: 14px;
+    z-index: 20;
+    display: none;
+    max-height: 320px;
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+  }
+
+  .suggest-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    width: 100%;
+    padding: 9px 10px;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .suggest-item:last-child { border-bottom: 0; }
+  .suggest-item:hover, .suggest-item.active { background: var(--accent-soft); }
+  .suggest-item mark { background: var(--mark); border-radius: 2px; }
+
+  .suggest-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .badge {
+    align-self: start;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--panel-soft);
+    color: var(--muted);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .tab {
+    height: 32px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--control);
+    cursor: pointer;
+  }
+
+  .tab.active {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent-text);
+    font-weight: 600;
+  }
+
+  .pane {
+    flex: 1 1 auto;
+    display: none;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding: 10px 10px 16px;
+  }
+
+  .pane.active { display: block; }
+
+  .package {
+    margin-bottom: 12px;
+  }
+
+  .package-title {
+    padding: 8px 8px 5px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+
+  .tree-dir {
+    margin-left: 8px;
+  }
+
+  .tree-dir > summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 30px;
+    padding: 4px 8px;
+    border-radius: 5px;
+    color: var(--dir-text);
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .tree-dir > summary::-webkit-details-marker { display: none; }
+  .tree-dir > summary:hover { background: var(--panel-soft); }
+
+  .tree-dir > summary::before {
+    content: "▸";
+    width: 12px;
+    color: var(--muted);
+  }
+
+  .tree-dir[open] > summary::before { content: "▾"; }
+
+  .tree-children {
+    margin-left: 14px;
+    border-left: 1px solid var(--line);
+    padding-left: 4px;
+  }
+
+  .file-row, .result-row {
+    width: 100%;
+    display: block;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .file-row {
+    min-height: 30px;
+    padding: 5px 8px 5px 20px;
+  }
+
+  .file-row:hover, .result-row:hover { background: var(--panel-soft); }
+  .file-row.active, .result-row.active { background: var(--accent-soft); color: var(--accent-text); }
+
+  .file-title, .result-title {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .file-rel, .result-meta {
+    display: block;
+    margin-top: 1px;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .result-group {
+    margin: 8px 0 12px;
+  }
+
+  .result-label {
+    padding: 6px 8px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .result-row {
+    padding: 8px;
+    margin-bottom: 4px;
+  }
+
+  .result-snippet {
+    display: -webkit-box;
+    margin-top: 4px;
+    overflow: hidden;
+    color: var(--snippet);
+    font-size: 12px;
+    line-height: 1.45;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+  }
+
+  .result-snippet mark { background: var(--mark); border-radius: 2px; }
+
+  .empty {
+    margin: 18px 8px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .preview {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    overscroll-behavior: contain;
+    background: var(--bg);
+  }
+
+  .preview-bar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 16px;
+    align-items: center;
+    min-height: 58px;
+    padding: 11px 18px;
+    border-bottom: 1px solid var(--line);
+    background: var(--preview-bar);
+  }
+
+  .preview-title {
+    min-width: 0;
+  }
+
+  #preview-name {
+    overflow: hidden;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  #preview-path {
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .preview-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  #open-live {
+    display: none;
+  }
+
+  .preview-shell {
+    min-height: 0;
+    overflow: hidden;
+    padding: 16px;
+  }
+
+  #article-frame {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+  }
+
+  @media (max-width: 820px) {
+    .app {
+      grid-template-columns: 1fr;
+      grid-template-rows: minmax(0, 43dvh) minmax(0, 1fr);
+      height: 100vh;
+      height: 100dvh;
+      min-height: 0;
+    }
+
+    .sidebar {
+      overflow-y: auto;
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .pane {
+      flex: 0 0 auto;
+      overflow: visible;
+    }
+
+    .preview {
+      min-height: 0;
+    }
+
+    .preview-shell {
+      padding: 10px;
+    }
+  }
+</style>
+</head>
+<body>
+<main class="app">
+  <aside class="sidebar">
+    <header class="brand">
+      <h1>Knowledge Browser</h1>
+      <p>Catalog entries + article search</p>
+    </header>
+
+    <section class="search" aria-label="Search">
+      <div class="search-row">
+        <input id="q" type="search" placeholder="Search entries and articles" autocomplete="off" spellcheck="false">
+        <button class="icon-button" id="search-button" title="Search" aria-label="Search">⌕</button>
+        <button class="icon-button" id="grep-button" type="button" style="width: auto; padding: 0 10px">Text search</button>
+      </div>
+      <div id="suggest-list"></div>
+      <div class="search-meta">
+        <span>Type: suggest entries</span>
+        <span>Enter: article search</span>
+      </div>
+    </section>
+
+    <nav class="tabs" aria-label="Navigation mode">
+      <button class="tab active" data-tab="tree" type="button">Tree</button>
+      <button class="tab" data-tab="results" type="button">Results</button>
+      <button class="tab" data-tab="drafts" type="button">Drafts</button>
+    </nav>
+
+    <section id="tree-pane" class="pane active" aria-label="Catalog tree">
+      <p class="empty">Loading tree...</p>
+    </section>
+    <section id="results-pane" class="pane" aria-label="Search results">
+      <p class="empty">Search results appear here.</p>
+    </section>
+    <section id="drafts-pane" class="pane" aria-label="Draft articles">
+      <p class="empty">Loading drafts...</p>
+    </section>
+  </aside>
+
+  <section class="preview" aria-label="Article preview">
+    <header class="preview-bar">
+      <div class="preview-title">
+        <div id="preview-name">Preview</div>
+        <div id="preview-path">Select an article from Tree, Results, or Drafts.</div>
+      </div>
+      <div class="preview-actions">
+        <button class="icon-button" id="open-live" title="Open executable article live" aria-label="Open executable article live">▶</button>
+        <button class="icon-button" id="open-new" title="Open current document in a new tab" aria-label="Open current document in a new tab">↗</button>
+        <button class="icon-button" id="theme-toggle" title="Switch to dark theme" aria-label="Switch to dark theme">◐</button>
+        <button class="icon-button" id="reindex" title="Reindex" aria-label="Reindex">⟳</button>
+      </div>
+    </header>
+    <div class="preview-shell">
+      <iframe id="article-frame" src="about:blank" title="Article preview"></iframe>
+    </div>
+  </section>
+</main>
+
+<script>
+const state = {
+  packages: [],
+  drafts: null,
+  selectedFile: "",
+  selectedAnchor: "",
+  selectedLabel: "",
+  suggestAbort: null,
+  suggestActive: -1,
+  searchRequest: 0
+};
+
+const qEl = document.getElementById("q");
+const searchButton = document.getElementById("search-button");
+const grepButton = document.getElementById("grep-button");
+const suggestList = document.getElementById("suggest-list");
+const treePane = document.getElementById("tree-pane");
+const resultsPane = document.getElementById("results-pane");
+const draftsPane = document.getElementById("drafts-pane");
+const articleFrame = document.getElementById("article-frame");
+const previewName = document.getElementById("preview-name");
+const previewPath = document.getElementById("preview-path");
+const openLiveButton = document.getElementById("open-live");
+const openNewButton = document.getElementById("open-new");
+const themeToggleButton = document.getElementById("theme-toggle");
+const reindexButton = document.getElementById("reindex");
+
+applyDisplayTheme(currentDisplayTheme(), { persist: false });
+
+document.querySelectorAll(".tab").forEach((button) => {
+  button.addEventListener("click", () => setTab(button.dataset.tab));
+});
+
+qEl.addEventListener("input", () => {
+  const q = qEl.value.trim();
+  state.suggestActive = -1;
+  if (!q) {
+    hideSuggest();
+    return;
+  }
+  fetchSuggest(q);
+});
+
+qEl.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    runSearch();
+    return;
+  }
+  if (event.key === "Escape") {
+    hideSuggest();
+    return;
+  }
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    moveSuggest(event.key === "ArrowDown" ? 1 : -1);
+    event.preventDefault();
+  }
+});
+
+searchButton.addEventListener("click", () => runSearch());
+grepButton.addEventListener("click", () => runSearch("grep"));
+
+document.addEventListener("click", (event) => {
+  if (!suggestList.contains(event.target) && event.target !== qEl) {
+    hideSuggest();
+  }
+});
+
+openNewButton.addEventListener("click", () => {
+  if (!state.selectedFile) return;
+  window.open(articleUrl(state.selectedFile, state.selectedAnchor, false), "_blank", "noopener");
+});
+
+themeToggleButton.addEventListener("click", () => {
+  const nextTheme = currentDisplayTheme() === "dark" ? "light" : "dark";
+  applyDisplayTheme(nextTheme);
+});
+
+openLiveButton.addEventListener("click", async () => {
+  if (!state.selectedFile || !isExecutableArticle(state.selectedFile)) return;
+  openLiveButton.disabled = true;
+  try {
+    const res = await fetch(`/api/live-marimo?file=${encodeURIComponent(state.selectedFile)}`, { method: "POST" });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    if (data.url) window.open(data.url, "_blank", "noopener");
+  } catch (err) {
+    previewPath.textContent = `Live launch failed: ${String(err)}`;
+  } finally {
+    openLiveButton.disabled = false;
+  }
+});
+
+reindexButton.addEventListener("click", refreshIndex);
+
+async function refreshIndex() {
+  reindexButton.disabled = true;
+  try {
+    const accepted = await fetch("/api/reindex", { method: "POST" });
+    if (!accepted.ok) throw new Error(await accepted.text());
+    previewPath.textContent = "Refreshing search index...";
+    while (true) {
+      const response = await fetch("/api/reindex");
+      if (!response.ok) throw new Error(await response.text());
+      const status = await response.json();
+      if (status.status === "failed") throw new Error(status.error || "Index refresh failed");
+      if (status.status === "succeeded") break;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    previewPath.textContent = "Search index refreshed.";
+    await Promise.all([loadTree(), loadDrafts()]);
+  } catch (error) {
+    previewPath.textContent = `Index refresh failed: ${String(error)}`;
+  } finally {
+    reindexButton.disabled = false;
+  }
+}
+
+loadNavigation();
+
+async function loadNavigation() {
+  await Promise.all([loadTree(), loadDrafts()]);
+  openInitialDocument();
+}
+
+async function loadTree() {
+  try {
+    const res = await fetch("/api/tree");
+    const data = await res.json();
+    state.packages = data.packages || [];
+    renderTree();
+  } catch (err) {
+    treePane.innerHTML = `<p class="empty">Tree load failed: ${esc(String(err))}</p>`;
+  }
+}
+
+async function loadDrafts() {
+  try {
+    const res = await fetch("/api/drafts");
+    state.drafts = await res.json();
+    renderDrafts();
+  } catch (err) {
+    draftsPane.innerHTML = `<p class="empty">Drafts load failed: ${esc(String(err))}</p>`;
+  }
+}
+
+function renderTree() {
+  if (!state.packages.length) {
+    treePane.innerHTML = `<p class="empty">No packages found in CATALOG.md.</p>`;
+    return;
+  }
+  treePane.innerHTML = state.packages.map((pkg) => `
+    <section class="package">
+      <div class="package-title" title="${esc(pkg.description)}">${esc(pkg.name)}</div>
+      ${renderTreeNodes(pkg.children || [], pkg.name)}
+    </section>
+  `).join("");
+}
+
+function renderDrafts() {
+  const draftNodes = state.drafts?.children || [];
+  if (!draftNodes.length) {
+    draftsPane.innerHTML = `<p class="empty">No drafts.</p>`;
+    return;
+  }
+  draftsPane.innerHTML = `
+    <section class="package">
+      <div class="package-title">drafts</div>
+      ${renderTreeNodes(draftNodes, "drafts")}
+    </section>
+  `;
+}
+
+function renderTreeNodes(nodes, packageName) {
+  if (!nodes.length) return `<p class="empty">No documents.</p>`;
+  return nodes.map((node) => {
+    if (node.type === "dir") {
+      return `
+        <details class="tree-dir" open>
+          <summary>${esc(node.name)}</summary>
+          <div class="tree-children">${renderTreeNodes(node.children || [], packageName)}</div>
+        </details>
+      `;
+    }
+    const label = `${packageName} / ${node.rel}`;
+    const kindBadge = node.articleType === "executable" ? " · py" : "";
+    return `
+      <button class="file-row" type="button" data-file="${esc(node.file)}" onclick="openDoc('${jsEsc(node.file)}', '', '${jsEsc(label)}')">
+        <span class="file-title">${esc(node.title || node.name)}</span>
+        <span class="file-rel">${esc(node.rel)}${kindBadge}</span>
+      </button>
+    `;
+  }).join("");
+}
+
+function openInitialDocument() {
+  const lastFile = localStorage.getItem("knowledgeBrowser:lastFile") || "";
+  const firstEntry = state.packages.find((pkg) => pkg.entryFile)?.entryFile || "";
+  const lastLabel = lastFile ? findLabelForFile(lastFile) : "";
+  const file = lastLabel ? lastFile : firstEntry;
+  if (!file) return;
+  const label = lastLabel || findLabelForFile(file) || file;
+  if (lastLabel && isDraftFile(file)) setTab("drafts");
+  openDoc(file, "", label);
+}
+
+function setTab(name) {
+  document.querySelectorAll(".tab").forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.tab === name);
+  });
+  treePane.classList.toggle("active", name === "tree");
+  resultsPane.classList.toggle("active", name === "results");
+  draftsPane.classList.toggle("active", name === "drafts");
+}
+
+async function fetchSuggest(q) {
+  if (state.suggestAbort) state.suggestAbort.abort();
+  state.suggestAbort = new AbortController();
+  try {
+    const res = await fetch(`/api/suggest?q=${encodeURIComponent(q)}`, { signal: state.suggestAbort.signal });
+    const data = await res.json();
+    renderSuggest(data.results || []);
+  } catch (err) {
+    if (err.name !== "AbortError") console.error(err);
+  }
+}
+
+function renderSuggest(items) {
+  if (!items.length) {
+    hideSuggest();
+    return;
+  }
+  suggestList.innerHTML = items.map((item, index) => `
+    <button class="suggest-item" type="button" data-index="${index}" onclick="openSuggestion(${index})">
+      <span class="suggest-text">${item.highlighted || esc(item.text)}</span>
+      <span class="badge">${esc(item.package || item.kind || "entry")}</span>
+    </button>
+  `).join("");
+  suggestList._items = items;
+  suggestList.style.display = "block";
+}
+
+function hideSuggest() {
+  if (state.suggestAbort) {
+    state.suggestAbort.abort();
+    state.suggestAbort = null;
+  }
+  suggestList.style.display = "none";
+  suggestList.innerHTML = "";
+  suggestList._items = [];
+  state.suggestActive = -1;
+}
+
+function moveSuggest(delta) {
+  const items = Array.from(suggestList.querySelectorAll(".suggest-item"));
+  if (!items.length) return;
+  state.suggestActive = Math.max(0, Math.min(items.length - 1, state.suggestActive + delta));
+  items.forEach((item, index) => item.classList.toggle("active", index === state.suggestActive));
+  items[state.suggestActive].scrollIntoView({ block: "nearest" });
+}
+
+function openSuggestion(index) {
+  const item = (suggestList._items || [])[index];
+  if (!item) return;
+  const target = resolveEntryTarget(item);
+  if (target.file) openDoc(target.file, target.anchor, `${item.package || ""} / ${item.rel || item.file || ""}`);
+  hideSuggest();
+}
+
+async function runSearch(mode = "search") {
+  const q = qEl.value.trim();
+  if (!q) return;
+  const request = ++state.searchRequest;
+  hideSuggest();
+  setTab("results");
+  resultsPane.innerHTML = `<p class="empty">Searching...</p>`;
+  try {
+    const res = await fetch(`/api/${mode}?q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    if (request !== state.searchRequest) return;
+    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+    renderResults(data, mode);
+  } catch (err) {
+    if (request !== state.searchRequest) return;
+    resultsPane.innerHTML = `<p class="empty">Search failed: ${esc(String(err))}</p>`;
+  }
+}
+
+function selectionOmissions(item) {
+  return [...new Set((item.omitted || []).map(reason =>
+    reason.endsWith(":byte_limit") ? "metadata omitted at size limit" :
+    reason === "section:stale_index" ? "indexed section no longer exists" :
+    "no authored Claim Line"
+  ))].join(" · ");
+}
+
+function renderResults(data, mode = "search") {
+  const articles = mode === "search" ? data.article_results || [] : [];
+  const entries = mode === "search" ? data.index_results || [] : [];
+  const fulltext = mode === "grep" ? data.fulltext_results || [] : [];
+  const statusLabel = mode === "grep" ? "Text search" : `Search status: ${data.semantic_status || ""}`;
+  const warnings = [...(data.warnings || [])];
+  if (data.truncated) warnings.push("Some candidates or fields were omitted; narrow the query.");
+  if (!articles.length && !entries.length && !fulltext.length) {
+    const status = warnings.length
+      ? `<section class="result-group"><div class="result-label">${esc(statusLabel)}</div>${warnings.map((warning) => `<p class="result-snippet">${esc(warning)}</p>`).join("")}</section>`
+      : "";
+    resultsPane.innerHTML = `${status}<p class="empty">No results.</p>`;
+    return;
+  }
+
+  let html = "";
+  if (warnings.length) {
+    html += `<section class="result-group"><div class="result-label">${esc(statusLabel)}</div>`;
+    html += warnings.map((warning) => `<p class="result-snippet">${esc(warning)}</p>`).join("");
+    html += `</section>`;
+  }
+  if (articles.length) {
+    html += `<section class="result-group"><div class="result-label">Articles</div>`;
+    html += articles.map((item) => {
+      const anchor = item.anchor ? `#${item.anchor}` : "";
+      const label = resultLabel(item);
+      const section = item.section ? ` / ${item.section}` : "";
+      const kind = isExecutableArticle(item.path) ? " · py" : "";
+      const score = Number.isFinite(item.score) ? ` · ${item.score.toFixed(3)}` : "";
+      return `
+        <button class="result-row" type="button" data-file="${esc(item.path)}" onclick="openDoc('${jsEsc(item.path)}', '${jsEsc(anchor)}', '${jsEsc(label + section)}')">
+          <span class="result-title">${esc(item.title || item.path)}</span>
+          <span class="result-meta">${esc(label)}${esc(section)}${kind}${score} · ${esc(claimSourceLabel(item))} · ${esc(selectionOmissions(item))}</span>
+          <span class="result-snippet">${esc(item.claim || "")} ${item.snippet || ""}</span>
+        </button>
+      `;
+    }).join("");
+    html += `</section>`;
+  }
+
+  if (entries.length) {
+    html += `<section class="result-group"><div class="result-label">Entries</div>`;
+    html += entries.map((item) => {
+      const target = resolveEntryTarget(item);
+      const label = resultLabel(item);
+      return `
+        <button class="result-row" type="button" data-file="${esc(target.file || item.path)}" onclick="openDoc('${jsEsc(target.file || item.path)}', '${jsEsc(target.anchor)}', '${jsEsc(label)}')">
+          <span class="result-title">${esc(stripMarkdown(item.claim || item.section || item.title || item.path))}</span>
+          <span class="result-meta">${esc(label)} · line ${esc(item.line)} · ${esc(claimSourceLabel(item))} · ${esc(selectionOmissions(item))}</span>
+        </button>
+      `;
+    }).join("");
+    html += `</section>`;
+  }
+
+  if (fulltext.length) {
+    html += `<section class="result-group"><div class="result-label">Text locations</div>`;
+    html += fulltext.map((item) => {
+      const label = resultLabel(item);
+      const matches = `<span class="result-snippet">${esc(item.claim || item.section || "")} · lines ${esc((item.match_lines || []).join(", "))}</span>`;
+      return `
+        <button class="result-row" type="button" data-file="${esc(item.path)}" onclick="openDoc('${jsEsc(item.path)}', '', '${jsEsc(label)}')">
+          <span class="result-title">${esc(item.path)}</span>
+          <span class="result-meta">${esc(label)} · ${esc(claimSourceLabel(item))} · ${esc(selectionOmissions(item))}</span>
+          ${matches}
+        </button>
+      `;
+    }).join("");
+    html += `</section>`;
+  }
+
+  resultsPane.innerHTML = html;
+}
+
+function claimSourceLabel(item) {
+  const source = item.claim_source;
+  return source ? `${source.path}:${source.line}` : "";
+}
+
+function resolveEntryTarget(item) {
+  if (item.kind === "article-claim") {
+    const self = (item.links || []).find((link) => link.path === item.path);
+    return { file: item.path, anchor: self && self.anchor ? `#${self.anchor}` : "" };
+  }
+  const linked = (item.links || [])[0];
+  if (linked) return { file: linked.path, anchor: linked.anchor ? `#${linked.anchor}` : "" };
+  const text = item.claim || "";
+  const match = text.match(/\[[^\]]+\]\(([^)]+\.md(?:#[^)]+)?)\)/);
+  if (!match) return { file: item.path || item.file || "", anchor: "" };
+
+  const raw = match[1];
+  const [pathPart, hashPart] = raw.split("#");
+  const anchor = hashPart ? `#${hashPart}` : "";
+  if (pathPart.startsWith("/")) return { file: pathPart, anchor };
+  const sourcePath = item.path || item.file || "";
+  const base = sourcePath ? sourcePath.slice(0, sourcePath.lastIndexOf("/")) : "";
+  return { file: `${base}/${pathPart}`, anchor };
+}
+
+function openDoc(file, anchor = "", label = "") {
+  if (!file) return;
+  state.selectedFile = file;
+  state.selectedAnchor = anchor || "";
+  state.selectedLabel = label || findLabelForFile(file) || file;
+  localStorage.setItem("knowledgeBrowser:lastFile", file);
+
+  articleFrame.onload = () => {
+    sendDisplayThemeToArticle();
+    if (!state.selectedAnchor) return;
+    try {
+      articleFrame.contentWindow.location.hash = state.selectedAnchor;
+    } catch (_) {}
+  };
+  articleFrame.src = articleUrl(file, anchor, true);
+  updatePreviewHeader();
+  updateActiveRows();
+}
+
+function currentDisplayTheme() {
+  return document.documentElement.dataset.displayTheme === "dark" ? "dark" : "light";
+}
+
+function applyDisplayTheme(theme, options = {}) {
+  const normalized = theme === "dark" ? "dark" : "light";
+  document.documentElement.dataset.displayTheme = normalized;
+  if (options.persist !== false) {
+    try {
+      localStorage.setItem("knowledgeBrowser:displayTheme", normalized);
+    } catch (_) {}
+  }
+  themeToggleButton.textContent = normalized === "dark" ? "☀" : "☾";
+  themeToggleButton.title = normalized === "dark" ? "Switch to light theme" : "Switch to dark theme";
+  themeToggleButton.setAttribute("aria-label", themeToggleButton.title);
+  sendDisplayThemeToArticle();
+}
+
+function sendDisplayThemeToArticle() {
+  try {
+    articleFrame.contentWindow.postMessage({
+      type: "knowledgeBrowser:displayTheme",
+      theme: currentDisplayTheme()
+    }, window.location.origin);
+  } catch (_) {}
+}
+
+function articleUrl(file, anchor = "", embed = true) {
+  const url = `/article?file=${encodeURIComponent(file)}${embed ? "&embed=1" : ""}`;
+  return `${url}${anchor || ""}`;
+}
+
+function updatePreviewHeader() {
+  previewName.textContent = state.selectedLabel.split("/").pop().trim() || "Preview";
+  previewPath.textContent = state.selectedLabel || state.selectedFile || "Select an article from Tree, Results, or Drafts.";
+  openLiveButton.style.display = isExecutableArticle(state.selectedFile) ? "inline-flex" : "none";
+}
+
+function updateActiveRows() {
+  document.querySelectorAll("[data-file]").forEach((el) => {
+    el.classList.toggle("active", el.dataset.file === state.selectedFile);
+  });
+}
+
+function findLabelForFile(file) {
+  for (const pkg of state.packages) {
+    const found = findNode(pkg.children || [], file);
+    if (found) return `${pkg.name} / ${found.rel}`;
+  }
+  const draft = findNode(state.drafts?.children || [], file);
+  if (draft) return `drafts / ${draft.rel}`;
+  return "";
+}
+
+function isDraftFile(file) {
+  return Boolean(findNode(state.drafts?.children || [], file));
+}
+
+function findNode(nodes, file) {
+  for (const node of nodes) {
+    if (node.type === "file" && node.file === file) return node;
+    if (node.type === "dir") {
+      const found = findNode(node.children || [], file);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function resultLabel(item) {
+  return [item.package, item.rel || item.path || item.file].filter(Boolean).join(" / ");
+}
+
+function isExecutableArticle(file) {
+  return String(file || "").toLowerCase().endsWith(".py");
+}
+
+function stripMarkdown(text) {
+  return String(text || "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/[*_`#>-]/g, "")
+    .trim();
+}
+
+function esc(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function jsEsc(s) {
+  return String(s || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'")
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+</script>
+</body>
+</html>

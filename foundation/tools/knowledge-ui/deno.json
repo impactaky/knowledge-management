@@ -1,0 +1,15 @@
+{
+  "imports": {
+    "katex": "npm:katex@0.16.22",
+    "mermaid": "npm:mermaid@11.12.0",
+    "water.css": "npm:water.css@2.1.1/out/water.min.css"
+  },
+  "lock": {
+    "path": "./deno.lock",
+    "frozen": true
+  },
+  "nodeModulesDir": "none",
+  "tasks": {
+    "build-browser-assets": "deno run --allow-read --allow-write scripts/build-browser-assets.ts"
+  }
+}

@@ -1,0 +1,15 @@
+.venv/
+.cache/
+.data/
+__pycache__/
+.pytest_cache/
+*.pyc
+.env
+.env.*
+!.env.example
+local/
+/drafts/
+/worklogs/
+foundation/tools/knowledge-ui/static/browser-assets/
+
+.tools/
