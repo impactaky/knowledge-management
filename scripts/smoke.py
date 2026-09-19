@@ -31,6 +31,15 @@ def clean_environment(catalog):
     return env
 
 
+def assert_sample_definition(result):
+    rows = [row for row in result['index_results']
+            if row.get('kind') == 'context' and row.get('section') == 'Sample']
+    assert len(rows) == 1
+    assert rows[0]['definition'] == (
+        '**Sample**:\nOne fictional observation at a stated time and unit.'
+    )
+
+
 async def mcp_smoke(env):
     params = StdioServerParameters(command=sys.executable,
                                   args=[str(ROOT / 'foundation/integrations/federation-mcp/server.py')], env=env)
@@ -45,6 +54,10 @@ async def mcp_smoke(env):
             assert not search.isError
             result = json.loads(search.content[0].text)
             assert result['semantic_status'] == 'not_requested' and result['index_results']
+            for deep in (False, True):
+                glossary = await session.call_tool('federation_search', {'query': 'Sample', 'deep': deep})
+                assert not glossary.isError
+                assert_sample_definition(json.loads(glossary.content[0].text))
             grep = await session.call_tool('federation_grep', {'query': 'UNIT_REQUIRED'})
             assert not grep.isError and json.loads(grep.content[0].text)['fulltext_results']
     print('MCP: initialize, list_tools, get_catalog, federation_search, federation_grep passed')
@@ -60,6 +73,7 @@ def main():
                                   check=True, capture_output=True, text=True, timeout=30).stdout
         assert 'sample-notes' in run(['-m', 'federation_core', 'catalog'])
         assert json.loads(run(['-m', 'federation_core', 'search', 'window mean', '--shallow']))['index_results']
+        assert_sample_definition(json.loads(run(['-m', 'federation_core', 'search', 'Sample', '--shallow'])))
         assert json.loads(run(['-m', 'federation_core', 'grep', 'UNIT_REQUIRED']))['fulltext_results']
         print('Core CLI: Catalog, shallow candidates and explicit grep passed')
         checked = run([str(UI / 'check.py')]).strip()
@@ -97,6 +111,8 @@ def main():
                         assert response.status == 200
                 with urlopen(base + '/api/search?q=window%20mean&deep=false', timeout=5) as response:
                     assert json.load(response)['index_results']
+                with urlopen(base + '/api/search?q=Sample&deep=false', timeout=5) as response:
+                    assert_sample_definition(json.load(response))
                 print('UI HTTP: startup, home, adopted article, 4 static assets and shallow search passed')
             finally:
                 proc.terminate()

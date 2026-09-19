@@ -53,6 +53,7 @@ def current_locator(
     line: int | None = None,
     section: str | None = None,
     claim_text: str | None = None,
+    definition: str | None = None,
 ) -> dict:
     headings = _headings(path)
     title = next((text for _, level, text in headings if level == 1), path.stem)
@@ -94,6 +95,8 @@ def current_locator(
             for target, anchor in local_references(index, text)
             if scope.allows(target)
         ]
+    elif definition is not None:
+        result["definition"] = definition
     else:
         result.setdefault("omitted", []).append("claim:not_authored")
     return result
@@ -108,29 +111,45 @@ def bound_response(response: dict, *, query_omitted: bool = False) -> dict:
     }
     response["omitted"] = {"candidates": 0, "fields": 0, "query": query_omitted}
     fields = [field for field in FIELDS if field in response]
+
+    def fits_candidate(row):
+        for key in (
+            "definition",
+            "claim",
+            "links",
+            "title",
+            "section",
+            "anchor",
+            "claim_source",
+            "package",
+        ):
+            if _budget_bytes(row) <= CANDIDATE_MAX_BYTES:
+                break
+            if key in row:
+                del row[key]
+                row.setdefault("omitted", []).append(f"{key}:byte_limit")
+                response["omitted"]["fields"] += 1
+        if _budget_bytes(row) > CANDIDATE_MAX_BYTES:
+            response["omitted"]["candidates"] += 1
+            return False
+        return True
+
     for field in fields:
-        kept = []
-        for row in response[field]:
-            for key in (
-                "claim",
-                "links",
-                "title",
-                "section",
-                "anchor",
-                "claim_source",
-                "package",
-            ):
-                if _budget_bytes(row) <= CANDIDATE_MAX_BYTES:
-                    break
-                if key in row:
-                    del row[key]
-                    row.setdefault("omitted", []).append(f"{key}:byte_limit")
-                    response["omitted"]["fields"] += 1
-            if _budget_bytes(row) > CANDIDATE_MAX_BYTES:
-                response["omitted"]["candidates"] += 1
-            else:
-                kept.append(row)
-        response[field] = kept
+        response[field] = [row for row in response[field] if fits_candidate(row)]
+    # If definitions exhaust the response budget, omit them whole before
+    # dropping locators or changing the existing article selection/counts.
+    index_rows = response.get("index_results", [])
+    for index in reversed(range(len(index_rows))):
+        if _budget_bytes(response) <= RESPONSE_MAX_BYTES:
+            break
+        row = index_rows[index]
+        if "definition" in row:
+            del row["definition"]
+            row.setdefault("omitted", []).append("definition:response_byte_limit")
+            response["omitted"]["fields"] += 1
+            # An omission reason may be longer than a tiny definition.
+            if not fits_candidate(row):
+                index_rows.pop(index)
     # Retain engine order within each field; no invented cross-field ranking.
     for field in reversed(fields):
         while response[field] and _budget_bytes(response) > RESPONSE_MAX_BYTES:

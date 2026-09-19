@@ -27,7 +27,7 @@ def get_catalog() -> str:
 
 @mcp.tool()
 def federation_search(query: str, deep: bool = True) -> dict[str, Any]:
-    """Find knowledge by meaning: article hybrid plus live entries by default; deep=false searches entries only. Returns claims and locators, no body snippets. For literal text locations choose federation_grep explicitly."""
+    """Find knowledge by meaning: article hybrid plus live entries by default; deep=false searches entries only. Returns current claims, short authored CONTEXT definitions and locators, no article body snippets. Oversized definitions are omitted whole with a reason. For literal text locations choose federation_grep explicitly."""
     return federation_core_search(query, deep=deep)
 
 

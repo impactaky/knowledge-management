@@ -73,15 +73,23 @@ The populated result fields in both APIs return locators: `package`, absolute `p
 Article rows also have the engine `score`; it is diagnostic, **not** a common
 ranking scale. Preserve the engine's first published hit per article in engine
 order. Full-text rows carry at most three `match_lines`, never matching prose.
-No path returns `text`, `body`, `snippet`, or glossary definitions to an Agent.
+No path returns `text`, `body`, or `snippet` to an Agent. Search `index_results`
+add `definition` for authored CONTEXT glossary terms, retaining `kind="context"`.
+It contains the complete current Markdown block starting at `**Term**:` (including
+an inline definition, subsequent paragraphs and applicability/caution text such
+as `_Avoid_`), up to the next term or Markdown section heading. Fenced examples
+cannot define terms. Term-name and definition-paragraph hits share the term's
+source line, section and anchor and are deduplicated. Non-glossary CONTEXT hits
+may remain locator-only. Explicit grep never adds glossary definitions.
 
 When authored, `claim` is one complete current article-frontmatter string
 (or a Package INDEX bullet). `claim_source` gives the real source path and
 line; `links` gives published targets. Prefer a self-anchor for the selected
 section, otherwise the first claim in array order. A lexical article-claim
 entry selects its matched claim. No `claims` array or body is returned.
-With no claim, `omitted` includes `claim:not_authored`; malformed metadata also
-adds `claim:invalid`. Publication is independent of authoring completeness.
+When neither a claim nor a glossary definition is authored, `omitted` includes
+`claim:not_authored`; malformed metadata also adds `claim:invalid`.
+Publication is independent of authoring completeness.
 
 Limits are 10 index rows, 5 unique articles and 10 text-match files. The engine
 candidate window remains 50; exclusions/duplicates may underfill five and
@@ -91,6 +99,10 @@ engine overflow sets `truncated`. There is no paging. Each candidate is at most
 `indent=2`, as used by FastMCP TextContent). Oversized
 metadata is omitted whole with a reason; oversized paths cause whole-candidate
 omission. Counts appear in top-level `omitted`; `truncated` signals loss.
+Definitions are never sliced: `definition:byte_limit` marks candidate overflow,
+and `definition:response_byte_limit` marks response overflow. Definitions are
+removed before dropping locators to fit the response, preserving article selection
+when the added glossary payload would otherwise displace it.
 Both APIs reject empty queries. Queries over 512 UTF-8 bytes are omitted and
 explicitly not executed; only search has `semantic_status=not_requested`. Providers serialize Unicode without ASCII
 escaping; transport framing and UI-added snippets are outside this JSON budget.
@@ -103,6 +115,12 @@ Current headings replace cached metadata; missing sections are omitted with
 `section:stale_index`. No cached claim/title/section is trusted as current.
 This guarantees source selection metadata, not embedding freshness: an old
 vector can still retrieve an irrelevant surviving article until index refresh.
+CONTEXT term blocks are resolved by their authored term name in the current file,
+so edited definitions (including inline ones) are current and moved terms get their
+new source line. Deleted, renamed, fenced or unpublished terms cannot supply an
+old definition. This applies to Meilisearch entries and live entry hits in both
+deep modes, including backend outages; cached definition text and ranges are not
+trusted as current.
 Concurrent edits within one search are not an atomic multi-file snapshot.
 
 ## Search publication

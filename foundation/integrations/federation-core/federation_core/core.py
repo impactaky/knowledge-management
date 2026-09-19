@@ -1,8 +1,8 @@
 """Catalog-derived search shared by every federation provider.
 
 The catalog is the only source of package scope.  The public search response is
-bounded: agents receive current authored claims and source locators on every
-path, never matching body prose or Meilisearch's raw response.
+bounded: agents receive current authored claims, short CONTEXT definitions and
+source locators, never article body prose or Meilisearch's raw response.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from urllib.request import Request, urlopen
 from .publication import EXCLUDED_DIRS, PublicationScope, index_lines, publication_boundary
 from .articles import read_article
 from .locators import QUERY_MAX_BYTES, current_locator, current_entry, bound_response
+from .glossary import current_context_entry
 
 DEFAULT_CATALOG_PATH = None
 DEFAULT_MEILI_URL = ""
@@ -384,10 +385,14 @@ def _merge_index_results(
         owner = _owning_package(Path(path), packages)
         if owner is None or not scopes[owner.root].allows(Path(path)):
             return False
-        entry = current_entry(Path(path), row)
+        if Path(path).name.casefold() == "context.md":
+            entry = current_context_entry(Path(path), row)
+        else:
+            current = current_entry(Path(path), row)
+            entry = (*current, None) if current else None
         if entry is None:
             return False
-        line, text = entry
+        line, text, definition = entry
         if not scopes[owner.root].allows_line(Path(path), text):
             return False
         kind = "article-claim" if scopes[owner.root].allows_article(Path(path)) else ("index" if Path(path).name.casefold() == "index.md" else "context")
@@ -399,7 +404,8 @@ def _merge_index_results(
             "package": owner.name,
             "path": path,
             **current_locator(Path(path), line=line, scope=scopes[owner.root],
-                              claim_text=text if kind == "article-claim" else None),
+                              claim_text=text if kind == "article-claim" else None,
+                              definition=definition),
             "kind": kind,
         }
         if line is not None:
@@ -413,7 +419,9 @@ def _merge_index_results(
         path = _absolute_path(row.get("path") or row.get("file"))
         start = _positive_int(row.get("line"))
         end = _positive_int(row.get("end_line")) or start
-        if row.get("kind") == "article-claim":
+        # CONTEXT duplicates use their resolved term position. Cached ranges
+        # may now cover a different term after a source edit or move.
+        if row.get("kind") == "article-claim" or Path(path).name.casefold() == "context.md":
             continue
         if path and start is not None and end is not None:
             meili_ranges.setdefault(path, []).append((start, end))

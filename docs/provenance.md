@@ -21,6 +21,11 @@ Third-party licenses below apply only to their respective components.
 | `foundation/tests/` | Three selected source test modules using generated fixtures, adapted for explicit configuration; new synthetic integration tests |
 | `examples/minimal/`, public explanations, smoke scripts | Synthetic examples and standalone guidance written for this extraction |
 
+The CONTEXT definition search update imports the owner's glossary resolver and
+response budgeting changes, with synthetic regression tests adapted to this
+repository's explicit configuration and MCP adapter. Native Hermes integration
+and source-store defaults remain outside this copy.
+
 Source experiment runners/corpora, migration utility, native Hermes plugin,
 service units, launcher and delivery workflows were omitted. The HTML-to-Markdown
 helper was not required by the selected skills and is not shipped. Upstream
