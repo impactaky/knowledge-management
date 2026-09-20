@@ -11,6 +11,7 @@ from urllib.parse import quote
 
 DEFAULT_PORT = "7776"
 
+
 def default_base_url() -> str:
     configured = os.environ.get("KNOWLEDGE_UI_BASE_URL")
     if configured:

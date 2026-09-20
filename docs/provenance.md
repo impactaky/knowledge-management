@@ -2,35 +2,24 @@
 
 ## Project status
 
-The owner authorized a local, independent extraction from their private knowledge
-management implementation. No source Git history, private Catalog, articles,
-profiles, service files, credentials or regression corpus was imported. The
-original store remains authoritative and is not synchronized by this project.
-The project-wide license is **undecided**. Local implementation is authorized;
-public release and any project-wide license grant await the owner's decision.
-Third-party licenses below apply only to their respective components.
+This repository is the authoritative canonical implementation for reusable knowledge-management mechanisms (search Core, MCP adapter, UI, indexer, checker, eight shared workflows, and shared vocabulary/rules). Creation and maintenance of this public repository has been authorized by the owner. Private stores (such as personal or organizational knowledge repositories) consume this common core directly without maintaining duplicate implementations. No source Git history, private Catalog, articles, profiles, service files, credentials or regression corpus is imported.
+The project-wide license remains **undecided**. Third-party licenses below apply only to their respective components.
 
 ## Selected implementation
 
 | Destination | Origin and treatment |
 |---|---|
-| `foundation/integrations/federation-core/federation_core/` | Owner-provided Core modules; private defaults removed, configuration and Catalog syntax adapted; CLI added |
-| `foundation/integrations/federation-mcp/server.py` | Owner-provided MCP adapter, moved to shared local dependency declaration |
-| `foundation/tools/knowledge-ui/` | Owner-provided renderer, frontend, checker and indexer; portable configuration, explicit service/execute opt-ins and offline document generation added |
-| `skills/` | Eight owner-provided workflows, selected references, SVG helper and agent metadata; private references and external mandatory skill dependencies removed |
-| `foundation/tests/` | Three selected source test modules using generated fixtures, adapted for explicit configuration; new synthetic integration tests |
-| `examples/minimal/`, public explanations, smoke scripts | Synthetic examples and standalone guidance written for this extraction |
+| `foundation/integrations/federation-core/federation_core/` | Canonical Core modules; portable explicit configuration and Catalog syntax; CLI included |
+| `foundation/integrations/federation-mcp/server.py` | Canonical MCP adapter, using the shared project environment |
+| `foundation/integrations/hermes-federation/` | Canonical Hermes memory provider for deterministic CATALOG prompt injection and read-only search/grep |
+| `foundation/integrations/hermes-federation-workflows/` | Canonical Hermes workflow discovery plugin with deduplication between shared and store-local workflows |
+| `foundation/tools/knowledge-ui/` | Canonical renderer, frontend, checker and indexer; portable configuration, explicit service/execute opt-ins and offline document generation |
+| `skills/` | Eight canonical workflows, selected references, SVG helper and agent metadata; portable behavior without mandatory private directories |
+| `foundation/modules/` | Canonical shared vocabulary for Knowledge Federation and Article Curation |
+| `foundation/tests/` | Synthetic test modules using generated fixtures and synthetic stores; no dependency on active catalogs or live backends |
+| `examples/minimal/`, public explanations, smoke scripts | Synthetic examples and standalone guidance |
 
-The CONTEXT definition search update imports the owner's glossary resolver and
-response budgeting changes, with synthetic regression tests adapted to this
-repository's explicit configuration and MCP adapter. Native Hermes integration
-and source-store defaults remain outside this copy.
-
-Source experiment runners/corpora, migration utility, native Hermes plugin,
-service units, launcher and delivery workflows were omitted. The HTML-to-Markdown
-helper was not required by the selected skills and is not shipped. Upstream
-`grilling`, `domain-modeling` and marimo skills were dependency references only;
-no third-party skill text, format templates or runtime code is vendored.
+Delivery coordination, agent exchange, private operations, historical ADRs, and private regression corpora remain in their respective private stores.
 
 ## Third-party components
 

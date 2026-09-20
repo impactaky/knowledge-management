@@ -250,6 +250,7 @@ def test_markdown_features_do_not_need_article_execution(tmp_path):
 def test_ui_catalog_scope_changes_without_automatic_indexing(store, monkeypatch):
     _, catalog, article = store
     monkeypatch.setattr(server, 'CATALOG_PATH', catalog)
+    monkeypatch.setattr(server, 'PACKAGE_ROOTS', server.parse_catalog_roots(catalog))
     assert server.is_safe_path(str(article))
     catalog.write_text('## Packages\n- [rules](rules/tooling.md) — Rules\n')
     assert not server.is_safe_path(str(article))

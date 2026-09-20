@@ -1,13 +1,15 @@
 # knowledge-management
 
-Portable mechanisms for creating, reviewing, adopting, searching and browsing
-knowledge in your own store. This is an independent copy of reusable tooling;
-it does not migrate, synchronize or modify the original store.
+Canonical, reusable mechanisms for creating, reviewing, adopting, searching and browsing
+knowledge across knowledge stores. This repository is the authoritative source for the
+shared core, MCP adapter, UI, indexer, checker, Hermes plugins, workflows, and vocabulary.
+Users and organizations manage their actual knowledge in separate stores configured by
+selecting their own Catalog.
 
-Core, MCP, the browser, indexer, checker and eight knowledge workflows are
-implemented. The bundled store contains only synthetic examples.
-**Public release is pending project license selection.** No project-wide license
-is granted by this repository; see [provenance and notices](docs/provenance.md).
+Core, MCP, the browser, indexer, checker, Hermes plugins, and eight knowledge workflows are
+implemented here. The bundled store contains only synthetic examples.
+**Repository creation has been authorized by the author; project license remains undecided.**
+No project-wide license is granted by this repository; see [provenance and notices](docs/provenance.md).
 
 ## Start with the sample
 

@@ -1,0 +1,3 @@
+name: federation
+version: 0.1.0
+description: "Deterministic CATALOG.md prompt injection and federated grep search for Hermes."

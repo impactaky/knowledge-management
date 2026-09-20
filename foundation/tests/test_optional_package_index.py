@@ -3,6 +3,7 @@ import asyncio
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -133,6 +134,8 @@ for (const scenario of CASES) {
 console.log("Legacy/current initialization: 6 scenarios passed");
 '''
         script = f'const OLD_LAST_FILE = {json.dumps(old_last_file)};\nconst CASES = {json.dumps(cases)};\n' + script
+        if not shutil.which('deno'):
+            self.skipTest('deno not found')
         result = subprocess.run(
             ['deno', 'run', '--no-config', '-'], input=script,
             text=True, capture_output=True, timeout=15,

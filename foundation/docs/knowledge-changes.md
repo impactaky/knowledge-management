@@ -1,14 +1,37 @@
-# Changing adopted knowledge
+# 知識の更新と適用条件
 
-Read the current originals and local instructions first. Check for concurrent
-edits; never overwrite unrelated changes. Keep one canonical definition and
-update references when it moves. Preserve applicability, evidence and provenance:
-a broader storage location does not justify a broader claim or disclosure.
+正本、記事内の主張、必要な案内・参照元を変更の単位として扱う。検索索引はその派生物であり、索引更新の成功をStockや判断の採用の代わりにしない。
 
-Discuss substantive article corrections with the owner, then apply the approved
-replacement through the draft review workflow. Keep article commits separate
-from glossary/decision changes and learning-map updates. Do not push unless asked.
+INDEXは任意の案内であり、文書追加ごとの追記は不要。読む条件や案内すべき規則が変わったときだけ、Catalogまたは残したINDEXを更新する。テーマ・読書/学習マップの全件一覧は作らない。
 
-Run the checker with the selected Catalog. It checks syntax, entrances, claims,
-links, anchors and duplicate terms, not factual truth or human approval. Refresh
-only the configured search service, and verify completion rather than mere receipt.
+## 著述と公開
+
+1. 対象の正本、主張行、参照元と、作業開始時のGit差分を確認する。変更直前にも読み直し、途中で変わった箇所は差分を合わせてから編集する。ファイル全体の上書きで並行編集を消さない。
+2. 複数ファイルの変更中に検索へ不整合を公開しうる差し替え・移動は、別worktreeで整え、検査済みのcommit単位で正本側へ反映する。同じファイルへの変更はGitの競合として解決し、他者の変更をreset・stashして進めない。
+3. 新規Stockは本人の内容承認後、本文・記事内`claims`・必要なアセットを揃えてdraftから`articles/<theme>/`直下へ移す。取り下げは記事をdraftへ移す。主張を削除しただけでは公開は取り下がらない。差し替えでは本文と主張行の意味を同じ変更で揃える。
+4. [整合性チェック](../tools/knowledge-ui/check.py)と対象差分を確認し、変更した正本・INDEX・参照元だけを明示してstageする。記事のcommitと、CONTEXT・ADR・読書マップのcommitは分離規約に従う。
+5. Stock、設計確認、実装許可はそれぞれの既存gateに従う。すでに承認された変更の反映で同じ承認を取り直さない。反映後に検索索引を更新し、受付だけでなく完了状態を確認する。
+
+Gitのcommitは履歴上の変更単位であり、複数repoの更新を原子的にはしない。repoをまたぐ移動では、移行先の準備と正本参照の切替を区別し、移行先を確認する前に元の定義を削除しない。途中で止まった場合は、現在の正本と未完了の参照切替を明示する。
+
+## 昇格で保持するもの
+
+Promotionでは、移動前の適用対象・前提条件・例外・根拠・出自を移動先にも保持する。Packageの再利用範囲が広いことは、その中の主張が無条件で成り立つ根拠にはならない。
+
+例えば、ある環境で採用した規則を共通Packageへ移しても、その適用条件は残す。環境全般で成り立つ規則に広げるなら、追加の根拠と例外を確認した別の判断として採用する。検索で類似の主張が見つかることだけを、一般化の証拠にしない。
+
+適用範囲とTrust Boundaryも別に確認する。広く適用できる知識でも、出自に非公開の文脈を含めば公開可能にはならない。元の場所には正本への参照と、その場所で必要な適用上の差分だけを残す。
+
+昇格に伴い既存Articleの説明が変わる場合は、本文とClaim Lineの修正内容を議論し、合意済みの差し替えを記事のcommitとして反映する。
+
+## 整合性チェック
+
+repositoryのrootで次を実行する。書き込みや自動修正は行わず、問題があれば非zeroで終了する。
+
+```bash
+uv run --project foundation/tools/knowledge-ui python foundation/tools/knowledge-ui/check.py --catalog CATALOG.md
+```
+
+Catalogの不正・名前/rootの重複・欠落したfile/directory入口、ローカルリンクと見出し参照の欠落、同じglossary内の重複定義、記事内`claims`の欠落・不正を検出する。rootと`modules/`のCONTEXTは共有glossaryとして確認し、それ以外のCONTEXT同士の同名語は別モデルとして許す。Packageが同じという理由だけで語義を統合しない。
+
+チェックは形式上の整合性を扱う。事実の正しさ、一般化の根拠、Stockの承認は代替しない。明示的な未作成先への参照を使う場合も、検出箇所を確認して意図を判断する。

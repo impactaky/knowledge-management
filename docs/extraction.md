@@ -1,4 +1,7 @@
-# Public-use extraction
+# Public-use extraction (Historical initial extraction)
+
+> [!NOTE]
+> This document records the initial public extraction. For current architecture, setup, and Hermes plugin configuration, see [setup](setup.md), [workflow](workflow.md), and [provenance](provenance.md). Native Hermes plugins (`hermes-federation` and `hermes-federation-workflows`) are maintained directly in this repository as canonical implementations.
 
 The authorized copy is implemented in this repository. It is not a migration,
 source cutover or automatic synchronization. The original store, configuration,
@@ -21,8 +24,8 @@ backend configuration preserves live entry search and browsing. No live service
 or store is a default. INDEX is optional, claims belong to articles, and human
 approval precedes moving drafts into the article layer.
 
-Native Hermes memory integration and deployment-specific orchestration workflows
-are omitted. The generic MCP boundary is sufficient for this copy.
+Deployment-specific orchestration and workflows remain private store concerns.
+Native Hermes memory and workflow plugins are now maintained directly in this repository (see [setup](setup.md)).
 No personal knowledge, source history, generated index or private fixture is
 part of the selected implementation. Third-party origins and the undecided
 project license are recorded in [provenance](provenance.md).

@@ -10,6 +10,6 @@ __pycache__/
 local/
 /drafts/
 /worklogs/
-foundation/tools/knowledge-ui/static/browser-assets/
+foundation/tools/knowledge-ui/static/browser-assets
 
 .tools/

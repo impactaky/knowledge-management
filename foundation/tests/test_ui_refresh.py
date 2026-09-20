@@ -1,10 +1,14 @@
 """Execute the actual browser refresh function with deterministic fetch replies."""
 from pathlib import Path
 import re
+import shutil
 import subprocess
+import pytest
 
 
 def test_refresh_reports_acceptance_errors_task_failures_and_success():
+    if not shutil.which('deno'):
+        pytest.skip('deno not found')
     source = (Path(__file__).resolve().parents[1] / 'tools/knowledge-ui/static/index.html').read_text()
     function = re.search(r'^async function refreshIndex\(\) \{.*?^}', source, re.M | re.S).group()
     script = function + '''
