@@ -111,4 +111,14 @@ write_config "$relative" '[implementation]' 'kind = "k"' 'args = []' '[worklog]'
 run_resolver "$relative" '' '' "$test_root/homedir"
 [[ "$resolver_status" -ne 0 ]] || fail 'relative worklog root was accepted'
 
+# A relative XDG_CONFIG_HOME is rejected instead of resolving against cwd.
+run_resolver '' '' 'relative/xdg' "$test_root/homedir"
+[[ "$resolver_status" -ne 0 ]] || fail 'relative XDG_CONFIG_HOME was accepted'
+grep -F 'XDG_CONFIG_HOME must be an absolute path' "$test_root/stderr" >/dev/null ||
+    fail 'relative XDG_CONFIG_HOME reason is unclear'
+
+# A relative HOME fallback is rejected for the same reason.
+run_resolver '' '' '' 'relative/home'
+[[ "$resolver_status" -ne 0 ]] || fail 'relative HOME was accepted'
+
 printf 'ok - order config resolver tests passed\n'

@@ -3,8 +3,8 @@ Description=Herdr server for Agent Exchange responders
 
 [Service]
 Type=simple
-EnvironmentFile=@ENVIRONMENT_FILE@
-ExecStart=@SKILL_DIR@/scripts/herdr-server.sh
+EnvironmentFile="@ENVIRONMENT_FILE@"
+ExecStart="@SKILL_DIR@/scripts/herdr-server.sh"
 Restart=on-failure
 RestartSec=3
 

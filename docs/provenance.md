@@ -27,10 +27,12 @@ Private operations, historical private ADRs, and private regression corpora rema
 The `propose`, `order`, and `agent-exchange` skills and the Delivery
 Coordination / Agent Exchange vocabulary were selected from a read-only local
 snapshot of a private knowledge store and adapted for the common core on top of
-this repository's commit `47a716ca471955cbd5b01cc548accbe2fd4c2226`. The private
-snapshot's own Git history, Catalog, configuration, deployment state and store
-name are not imported. No symlink in this repository points into a private
-store.
+this repository's commit `47a716ca471955cbd5b01cc548accbe2fd4c2226`. The
+selected source files correspond to the private source repository at commit
+`2c1498a26bcd52b16afe4a9847a84673d0ac0477`. That repository's path and store
+name are not recorded here, and its Git history, Catalog, configuration,
+deployment state and store name are not imported. No symlink in this repository
+points into a private store.
 
 Public-use adaptations:
 

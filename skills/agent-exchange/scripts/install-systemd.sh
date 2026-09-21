@@ -110,6 +110,23 @@ require_value HERDR_SESSION
 [[ -d "$AGENT_EXCHANGE_SKILL_DIR" ]] || die "AGENT_EXCHANGE_SKILL_DIR does not exist: $AGENT_EXCHANGE_SKILL_DIR"
 [[ -x "$HERDR_BIN" ]] || die "HERDR_BIN is not executable: $HERDR_BIN"
 
+# systemd unit syntax treats quotes, backslashes, '%' specifiers and '$'
+# variable expansion specially. The generator quotes paths so spaces are safe,
+# but it cannot represent these characters unambiguously; refuse them instead
+# of emitting a unit that silently truncates or expands the path.
+reject_unrepresentable_path() {
+    local name="$1"
+    local value="$2"
+    case "$value" in
+        *$'\n'* | *$'\r'* | *'"'* | *'\\'* | *'%'* | *'$'*)
+            die "$name contains a character that cannot be represented safely in a systemd unit: $value"
+            ;;
+    esac
+}
+
+reject_unrepresentable_path AGENT_EXCHANGE_SKILL_DIR "$AGENT_EXCHANGE_SKILL_DIR"
+reject_unrepresentable_path EnvironmentFile "$env_file"
+
 if [[ -z "$target_dir" ]]; then
     if [[ -n "${XDG_CONFIG_HOME:-}" ]]; then
         target_dir="$XDG_CONFIG_HOME/systemd/user"

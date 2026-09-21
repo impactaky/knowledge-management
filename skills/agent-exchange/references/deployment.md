@@ -7,10 +7,11 @@ defined in [SKILL.md](../SKILL.md); the protocol does not depend on systemd.
 ## Two different files
 
 - **Launcher config** (`agent-exchange.toml`): which Agent implementation the
-  Launcher starts, as `[implementation] kind` and `args`. Selected with
-  `AGENT_EXCHANGE_CONFIG`, then
-  `${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/agent-exchange.toml`.
-  See [../config.example.toml](../config.example.toml).
+  Launcher starts, as `[implementation] kind` and `args`. It is real TOML parsed
+  with Python's standard-library `tomllib`. Selected with `AGENT_EXCHANGE_CONFIG`,
+  then `${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/agent-exchange.toml`.
+  A relative `XDG_CONFIG_HOME` or `HOME` fallback is rejected, not resolved
+  against the current directory. See [../config.example.toml](../config.example.toml).
 - **Deployment env** (`agent-exchange.env`): where the skill lives and how the
   responder reaches Herdr. Read only at install time by the systemd adapter.
   Selected with `AGENT_EXCHANGE_ENV_FILE`, then
@@ -69,10 +70,36 @@ Send, respond, wait and cleanup:
 
 Launcher and systemd adapter:
 
-- the above plus a Herdr executable and `timeout`
+- the above plus `python3` (standard-library `tomllib`), a Herdr executable and `timeout`
 
 If a command is missing, report which command is unavailable and which
 operation needs it. Do not substitute a different exchange mechanism.
+
+## Known-kind preparation
+
+The Launcher applies only the preparation the published contracts require, and
+never guesses for unknown kinds:
+
+- `codex`: appends `--add-dir <Exchange Directory>` so the responder can reach
+  the exchange while sandboxed.
+- `agy`: appends `--add-dir <Exchange Directory> --mode accept-edits --sandbox`.
+- `opencode`: exports a session-only `OPENCODE_CONFIG_CONTENT` into the agent
+  pane that grants `permission.external_directory` `"allow"` for the Exchange
+  Directory and its descendants, merged with any existing inline config. It
+  does not change global configuration.
+- Unknown kinds receive the configured args unchanged.
+
+Permission-bypass and conflicting safety arguments are refused before any agent
+starts: `--dangerously-skip-permissions` for any kind, `--mode` for `agy`, and
+`--auto` for `opencode`.
+
+## Unit path safety
+
+The installer quotes `EnvironmentFile=` and `ExecStart=` so paths with spaces
+are parsed as one word. Characters that systemd unit syntax cannot represent
+unambiguously in a path (`"`, `\`, newline, carriage return, `%` specifiers and
+`$` variable expansion) are rejected instead of emitting a unit that silently
+truncates or expands the path.
 
 ## Operational boundary
 

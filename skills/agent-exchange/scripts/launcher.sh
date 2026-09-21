@@ -17,6 +17,10 @@ command -v flock >/dev/null 2>&1 || {
     printf 'flock is required\n' >&2
     exit 1
 }
+command -v python3 >/dev/null 2>&1 || {
+    printf 'python3 is required\n' >&2
+    exit 1
+}
 
 herdr_bin="$(agent_exchange_resolve_herdr)" || {
     printf 'herdr executable not found; set HERDR_BIN\n' >&2
@@ -35,7 +39,7 @@ flock -n 9 || {
 # Resolve the Launcher implementation once at startup. A missing, invalid or
 # ambiguous config must stop the Launcher before any agent is started; it must
 # never fall back to another kind or model.
-launcher_config="$("$SCRIPT_DIR/launcher-config.sh")" || exit 1
+launcher_config="$(python3 "$SCRIPT_DIR/launcher-config.py")" || exit 1
 agent_kind="$(jq -r '.kind' <<<"$launcher_config")"
 mapfile -t agent_user_args < <(jq -r '.args[]?' <<<"$launcher_config")
 
@@ -43,15 +47,95 @@ herdr() {
     "$herdr_bin" "$@"
 }
 
+# Reject permission-bypass and conflicting safety arguments before any agent is
+# started, so a misconfigured kind cannot silently weaken its sandbox.
+validate_user_args() {
+    local arg
+    for arg in "${agent_user_args[@]}"; do
+        case "$arg" in
+            --dangerously-skip-permissions)
+                printf 'refusing permission-bypass argument for kind %s: %s\n' "$agent_kind" "$arg" >&2
+                return 1
+                ;;
+        esac
+    done
+    case "$agent_kind" in
+        agy)
+            for arg in "${agent_user_args[@]}"; do
+                case "$arg" in
+                    --mode | --mode=*)
+                        printf 'refusing conflicting --mode for agy; accept-edits is required\n' >&2
+                        return 1
+                        ;;
+                esac
+            done
+            ;;
+        opencode)
+            for arg in "${agent_user_args[@]}"; do
+                case "$arg" in
+                    --auto)
+                        printf 'refusing permission-bypass argument for kind opencode: --auto\n' >&2
+                        return 1
+                        ;;
+                esac
+            done
+            ;;
+    esac
+    return 0
+}
+
+validate_user_args || exit 1
+
 build_agent_args() {
-    # Known kinds keep their required exchange-directory access. Unknown kinds
-    # are passed straight to Herdr without guessing kind-specific preparation.
+    # Known kinds keep their required exchange-directory access and sandbox
+    # arguments, appending after the user args to preserve their order. Unknown
+    # kinds are passed straight to Herdr without guessing kind-specific
+    # preparation.
     case "$agent_kind" in
         codex)
             agent_final_args=("${agent_user_args[@]}" --add-dir "$root")
             ;;
+        agy)
+            agent_final_args=("${agent_user_args[@]}" --add-dir "$root" --mode accept-edits --sandbox)
+            ;;
         *)
             agent_final_args=("${agent_user_args[@]}")
+            ;;
+    esac
+}
+
+prepare_opencode_pane() {
+    local pane_id="$1"
+    local base="${OPENCODE_CONFIG_CONTENT:-}"
+    local merged export_cmd
+
+    if [[ -n "$base" ]]; then
+        printf '%s' "$base" | jq -e . >/dev/null 2>&1 || {
+            printf 'OPENCODE_CONFIG_CONTENT is not valid JSON\n' >&2
+            return 1
+        }
+        merged="$(jq -c -n --argjson base "$base" --arg root "$root" '
+            $base
+            | .permission = (.permission // {})
+            | .permission.external_directory = (.permission.external_directory // {})
+            | .permission.external_directory[$root] = "allow"
+            | .permission.external_directory[$root + "/**"] = "allow"
+        ')" || return 1
+    else
+        merged="$(jq -c -n --arg root "$root" '{
+            permission: {external_directory: {($root): "allow", ($root + "/**"): "allow"}}
+        }')" || return 1
+    fi
+
+    printf -v export_cmd 'export OPENCODE_CONFIG_CONTENT=%q' "$merged"
+    herdr pane run "$pane_id" "$export_cmd" >/dev/null 2>&1
+}
+
+prepare_pane() {
+    local pane_id="$1"
+    case "$agent_kind" in
+        opencode)
+            prepare_opencode_pane "$pane_id"
             ;;
     esac
 }
@@ -187,7 +271,7 @@ process_fresh_request() {
     local repository repository_root primary_worktree_line common_repository base_commit
     local parent_workspace parent_json
     local worktree_json worktree_workspace pane_id worktree_path
-    local compact_id agent_name agent_output prompt_output prompt respond_command
+    local compact_id agent_name agent_output prepare_output prompt_output prompt respond_command
     local agent_started=false agent_start_attempt
 
     if [[ ! -s "$running_dir/request.md" || -L "$running_dir/request.md" ||
@@ -265,6 +349,14 @@ process_fresh_request() {
 
     compact_id="${id//-/}"
     agent_name="ae-${compact_id:0:28}"
+
+    # Known kinds may need session-only pane preparation before the agent starts
+    # (for example the Exchange Directory permission for opencode).
+    if ! prepare_output="$(prepare_pane "$pane_id" 2>&1)"; then
+        failure_response "$id" pane-prepare "${prepare_output:-could not prepare the agent pane}"
+        return
+    fi
+
     # Worktree integrations may briefly run setup in the new root pane after
     # worktree creation returns. Retry only that pre-start busy race; other
     # start failures remain terminal for this Request.

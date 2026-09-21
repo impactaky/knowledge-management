@@ -9,7 +9,7 @@ Agent Exchangeは同一host・同一OS user・同一filesystem上の一回限り
 
 既定のExchange Directoryは `${AGENT_EXCHANGE_ROOT:-${XDG_STATE_HOME:-$HOME/.local/state}/agent-exchange}`。参加するcontainerにはrepositoryとExchange Directoryをhostと同じ絶対pathでbind mountする。以下の`scripts/...`はこのskill directoryを基準とする。
 
-このskillは `bash`、`git`、`jq`、`inotifywait`、`flock`、Herdr executable を使う。導入とsystemd adapterは [deployment reference](references/deployment.md) に従う。実行時に不足するcommandがあれば、どのcommandがどの操作に必要かを具体的に報告し、代替実装を推測しない。
+このskillは `bash`、`git`、`jq`、`inotifywait`、`flock`、`python3`（標準ライブラリ `tomllib`）、Herdr executable を使う。導入とsystemd adapterは [deployment reference](references/deployment.md) に従う。実行時に不足するcommandがあれば、どのcommandがどの操作に必要かを具体的に報告し、代替実装を推測しない。
 
 ## Requestを送る
 
@@ -80,7 +80,7 @@ Responseにはworktree絶対path、変更概要、commit、検証結果、逸脱
 
 `scripts/launcher.sh`は参照Launcherであり、交換規約そのものには含まれない。
 
-Launcherは起動時に一度だけconfigを解決し、応答Agentの`kind`とnative引数を決める。configは非対話の応答Agentをどの実装で起動するかを決めるもので、Exchange Directoryなどの配備値を持つdeployment envとは用途が異なる別fileである。解決順は明示的な `AGENT_EXCHANGE_CONFIG`、次に `${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/agent-exchange.toml`。
+Launcherは起動時に一度だけconfigを解決し、応答Agentの`kind`とnative引数を決める。configは `python3` の標準ライブラリ `tomllib` で読むreal TOMLであり、非対話の応答Agentをどの実装で起動するかを決める。Exchange Directoryなどの配備値を持つdeployment envとは用途が異なる別fileである。解決順は明示的な `AGENT_EXCHANGE_CONFIG`、次に `${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/agent-exchange.toml`。相対的な `XDG_CONFIG_HOME` や `HOME` fallback はcwd基準で解決せずエラーにする。
 
 ```toml
 [implementation]
@@ -88,7 +88,7 @@ kind = "<herdr kind>"
 args = ["<native arg>", "..."]
 ```
 
-config欠落、不正TOML、`[implementation]`欠落、空の`kind`、文字列配列でない`args`は、いずれもAgent起動前に明示エラーになる。`kind`候補の固定リストは持たず、未知のkindもnative引数の順序をそのまま保ってHerdrへ渡す。既知kindでは応答AgentがExchange Directoryへ書き込めるよう、必要なnative引数（例: `codex`の`--add-dir <Exchange Directory>`）を利用者引数の順序を保ったまま補う。未知kindでは専用準備を推測しない。応答Agentをin-repoの既定modelや別kindへ自動fallbackしない。実利用configはrepositoryへcommitせず、[config.example.toml](../config.example.toml)を雛形にする。
+config欠落、不正TOML、`[implementation]`欠落、空の`kind`、文字列配列でない`args`は、いずれもAgent起動前に明示エラーになる。`kind`候補の固定リストは持たず、未知のkindもnative引数の順序をそのまま保ってHerdrへ渡す。既知kindでは応答AgentがExchange Directoryへ到達できるよう、利用者引数の順序を保ったまま必要な準備を補う: `codex`は`--add-dir <Exchange Directory>`、`agy`は`--add-dir <Exchange Directory> --mode accept-edits --sandbox`、`opencode`は起動paneへsession-onlyの`OPENCODE_CONFIG_CONTENT`としてExchange Directoryとその配下の`external_directory`許可をmergeしてexportする。`--dangerously-skip-permissions`（全kind）、`agy`の`--mode`、`opencode`の`--auto`は安全を打ち消すため起動前に拒否する。未知kindでは専用準備を推測しない。応答Agentをin-repoの既定modelや別kindへ自動fallbackしない。実利用configはrepositoryへcommitせず、[config.example.toml](../config.example.toml)を雛形にする。
 
 新規Requestでは次の順で進む。
 

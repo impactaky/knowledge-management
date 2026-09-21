@@ -77,6 +77,7 @@ def run_shell_test(relative: str) -> None:
     "agent-exchange/tests/test-agent-exchange.sh",
     "agent-exchange/tests/test-herdr-server.sh",
     "agent-exchange/tests/test-launcher-config.sh",
+    "agent-exchange/tests/test-launcher-kinds.sh",
     "agent-exchange/tests/test-systemd.sh",
     "order/tests/test-resolve-config.sh",
 ])

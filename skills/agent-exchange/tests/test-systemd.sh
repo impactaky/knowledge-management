@@ -30,6 +30,10 @@ assert_absent() {
 
 skill_dir="$test_root/skill dir"
 mkdir -p "$skill_dir/scripts"
+for script in launcher.sh herdr-server.sh; do
+    printf '#!/bin/sh\nexit 0\n' >"$skill_dir/scripts/$script"
+    chmod +x "$skill_dir/scripts/$script"
+done
 herdr_bin="$test_root/herdr"
 printf '#!/bin/sh\nexit 0\n' >"$herdr_bin"
 chmod +x "$herdr_bin"
@@ -50,12 +54,13 @@ xdg_home="$test_root/xdg"
 xdg_env="$xdg_home/knowledge-management/agent-exchange.env"
 write_env "$xdg_env"
 
-# The XDG env file is resolved to an absolute EnvironmentFile at install time.
+# The XDG env file is resolved to an absolute EnvironmentFile at install time,
+# and space-containing paths are quoted so systemd parses them as one word.
 AGENT_EXCHANGE_ENV_FILE='' XDG_CONFIG_HOME="$xdg_home" HOME="$test_root/homedir" \
     bash "$INSTALLER" --dry-run >"$test_root/dry-run.txt" 2>"$test_root/err"
-assert_contains "$test_root/dry-run.txt" "EnvironmentFile=$(realpath -e -- "$xdg_env")"
-assert_contains "$test_root/dry-run.txt" "ExecStart=$skill_dir/scripts/launcher.sh"
-assert_contains "$test_root/dry-run.txt" "ExecStart=$skill_dir/scripts/herdr-server.sh"
+assert_contains "$test_root/dry-run.txt" "EnvironmentFile=\"$(realpath -e -- "$xdg_env")\""
+assert_contains "$test_root/dry-run.txt" "ExecStart=\"$skill_dir/scripts/launcher.sh\""
+assert_contains "$test_root/dry-run.txt" "ExecStart=\"$skill_dir/scripts/herdr-server.sh\""
 # Deployment values stay in the env file, not in the unit.
 assert_absent "$test_root/dry-run.txt" "$exchange_root"
 assert_absent "$test_root/dry-run.txt" "$herdr_bin"
@@ -70,14 +75,14 @@ explicit_env="$test_root/explicit.env"
 write_env "$explicit_env"
 AGENT_EXCHANGE_ENV_FILE="$explicit_env" XDG_CONFIG_HOME="$xdg_home" HOME="$test_root/homedir" \
     bash "$INSTALLER" --dry-run >"$test_root/explicit.txt" 2>"$test_root/err"
-assert_contains "$test_root/explicit.txt" "EnvironmentFile=$(realpath -e -- "$explicit_env")"
+assert_contains "$test_root/explicit.txt" "EnvironmentFile=\"$(realpath -e -- "$explicit_env")\""
 
 # HOME fallback is used when XDG and the explicit override are empty.
 home_env="$test_root/homedir/.config/knowledge-management/agent-exchange.env"
 write_env "$home_env"
 AGENT_EXCHANGE_ENV_FILE='' XDG_CONFIG_HOME='' HOME="$test_root/homedir" \
     bash "$INSTALLER" --dry-run >"$test_root/homedir.txt" 2>"$test_root/err"
-assert_contains "$test_root/homedir.txt" "EnvironmentFile=$(realpath -e -- "$home_env")"
+assert_contains "$test_root/homedir.txt" "EnvironmentFile=\"$(realpath -e -- "$home_env")\""
 
 # A missing required value stops before writing anything.
 missing_env="$test_root/missing.env"
@@ -94,13 +99,39 @@ if AGENT_EXCHANGE_ENV_FILE="$relative_env" bash "$INSTALLER" --dry-run >/dev/nul
     fail 'relative AGENT_EXCHANGE_ROOT was accepted'
 fi
 
-# Writing units embeds the resolved absolute EnvironmentFile.
+# Writing units embeds the resolved absolute EnvironmentFile with quoting.
 target="$test_root/units"
 AGENT_EXCHANGE_ENV_FILE='' XDG_CONFIG_HOME="$xdg_home" HOME="$test_root/homedir" \
     bash "$INSTALLER" --target-dir "$target" >"$test_root/write.txt" 2>"$test_root/err"
-assert_contains "$target/agent-exchange-launcher.service" "EnvironmentFile=$(realpath -e -- "$xdg_env")"
-assert_contains "$target/herdr-agent-exchange.service" "EnvironmentFile=$(realpath -e -- "$xdg_env")"
+assert_contains "$target/agent-exchange-launcher.service" "EnvironmentFile=\"$(realpath -e -- "$xdg_env")\""
+assert_contains "$target/herdr-agent-exchange.service" "EnvironmentFile=\"$(realpath -e -- "$xdg_env")\""
+assert_contains "$target/agent-exchange-launcher.service" "ExecStart=\"$skill_dir/scripts/launcher.sh\""
 assert_absent "$target/agent-exchange-launcher.service" '@'
 assert_absent "$target/herdr-agent-exchange.service" '@'
+
+# systemd-analyze (when present) must accept the space-containing units without
+# truncating ExecStart at the first space.
+if command -v systemd-analyze >/dev/null 2>&1; then
+    if ! systemd-analyze verify --man=no \
+        "$target/agent-exchange-launcher.service" \
+        "$target/herdr-agent-exchange.service" >"$test_root/verify.txt" 2>&1; then
+        cat "$test_root/verify.txt" >&2
+        fail 'systemd-analyze verify rejected the generated units'
+    fi
+fi
+
+# Paths with characters systemd cannot represent safely are refused.
+for bad_value in 'bad"quote' 'bad%specifier' 'bad$variable'; do
+    bad_env="$test_root/unrepresentable.env"
+    {
+        printf 'AGENT_EXCHANGE_SKILL_DIR=%s\n' "$test_root/$bad_value"
+        printf 'AGENT_EXCHANGE_ROOT=%s\n' "$exchange_root"
+        printf 'HERDR_BIN=%s\n' "$herdr_bin"
+        printf 'HERDR_SESSION=agent-exchange\n'
+    } >"$bad_env"
+    if AGENT_EXCHANGE_ENV_FILE="$bad_env" bash "$INSTALLER" --dry-run >/dev/null 2>&1; then
+        fail "unrepresentable path was accepted: $bad_value"
+    fi
+done
 
 printf 'ok - Agent Exchange systemd adapter tests passed\n'

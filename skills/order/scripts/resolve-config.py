@@ -33,10 +33,14 @@ def resolve_path(explicit: str | None) -> Path:
         return Path(override)
     xdg = os.environ.get("XDG_CONFIG_HOME")
     if xdg:
+        if not xdg.startswith("/"):
+            raise ConfigError(f"XDG_CONFIG_HOME must be an absolute path: {xdg}")
         return Path(xdg) / "knowledge-management" / CONFIG_NAME
     home = os.environ.get("HOME")
     if not home:
         raise ConfigError("HOME must be set to resolve the default config location")
+    if not home.startswith("/"):
+        raise ConfigError(f"HOME must be an absolute path: {home}")
     return Path(home) / ".config" / "knowledge-management" / CONFIG_NAME
 
 

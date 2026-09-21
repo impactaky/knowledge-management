@@ -56,6 +56,14 @@ case "$1 $2" in
         ;;
     'agent start')
         printf '%s\n' "$3" >"$FAKE_HERDR_STATE/agent"
+        : >"$FAKE_HERDR_STATE/agent-start"
+        for argument in "$@"; do
+            printf '%s\n' "$argument" >>"$FAKE_HERDR_STATE/agent-start"
+        done
+        printf '{"result":{}}\n'
+        ;;
+    'pane run')
+        printf '%s\n' "$4" >"$FAKE_HERDR_STATE/pane-run"
         printf '{"result":{}}\n'
         ;;
     'agent get')

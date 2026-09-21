@@ -5,7 +5,7 @@ set -Eeuo pipefail
 
 TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_DIR="$(cd -- "$TEST_DIR/../scripts" && pwd)"
-RESOLVER="$SCRIPT_DIR/launcher-config.sh"
+RESOLVER="$SCRIPT_DIR/launcher-config.py"
 test_root="$(mktemp -d)"
 trap 'rm -rf -- "$test_root"' EXIT
 
@@ -29,7 +29,7 @@ run_resolver() {
     local config="$1" xdg="$2" home="$3"
     set +e
     resolver_out="$(AGENT_EXCHANGE_CONFIG="$config" XDG_CONFIG_HOME="$xdg" HOME="$home" \
-        bash "$RESOLVER" 2>"$test_root/stderr")"
+        python3 "$RESOLVER" 2>"$test_root/stderr")"
     resolver_status=$?
     set -e
 }
@@ -104,5 +104,42 @@ done
 ln -s "$explicit" "$test_root/symlink.toml"
 run_resolver "$test_root/symlink.toml" '' "$test_root/homedir"
 [[ "$resolver_status" -ne 0 ]] || fail 'symlinked config was followed'
+
+# Real TOML features parse correctly: comments, escaped strings, multiline arrays.
+toml_features="$test_root/toml-features.toml"
+cat >"$toml_features" <<'EOF'
+# Full-line comment
+[implementation]
+kind = "features-kind" # inline comment
+args = [
+    "tab\there",
+    "quote \"inside\"",
+    "back\\slash",
+]
+EOF
+run_resolver "$toml_features" '' "$test_root/homedir"
+[[ "$resolver_status" -eq 0 ]] || fail "valid TOML was rejected: $(cat "$test_root/stderr")"
+assert_eq "$(jq -r .kind <<<"$resolver_out")" features-kind 'inline comment broke kind'
+assert_eq "$(jq -r '.args[0]' <<<"$resolver_out")" $'tab\there' 'escape tab not decoded'
+assert_eq "$(jq -r '.args[1]' <<<"$resolver_out")" 'quote "inside"' 'escape quote not decoded'
+assert_eq "$(jq -r '.args[2]' <<<"$resolver_out")" 'back\slash' 'escape backslash not decoded'
+
+# Typed and syntactically malformed values are rejected.
+for bad in 'kind = 123' 'kind = "unterminated' 'args = {a = 1}' 'args = ["ok", true]'; do
+    malformed="$test_root/malformed.toml"
+    write_config "$malformed" '[implementation]' "$bad"
+    run_resolver "$malformed" '' "$test_root/homedir"
+    [[ "$resolver_status" -ne 0 ]] || fail "malformed TOML was accepted: $bad"
+done
+
+# A relative XDG_CONFIG_HOME is rejected instead of resolving against cwd.
+run_resolver '' 'relative/xdg' "$test_root/homedir"
+[[ "$resolver_status" -ne 0 ]] || fail 'relative XDG_CONFIG_HOME was accepted'
+grep -F 'XDG_CONFIG_HOME must be an absolute path' "$test_root/stderr" >/dev/null ||
+    fail 'relative XDG_CONFIG_HOME reason is unclear'
+
+# A relative HOME fallback is rejected for the same reason.
+run_resolver '' '' 'relative/home'
+[[ "$resolver_status" -ne 0 ]] || fail 'relative HOME was accepted'
 
 printf 'ok - Agent Exchange Launcher config resolver tests passed\n'
