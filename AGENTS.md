@@ -8,6 +8,13 @@
 - Keep examples self-contained. Do not introduce links or defaults pointing to a developer's private filesystem, network, or repositories.
 - Before publishing, review the complete tracked file set and Git history. A string scan is useful evidence, not proof that all private information has been removed.
 
+## Portable skills
+
+- Design skills to work across agent environments. Keep their instructions in `SKILL.md` and portable supporting files; do not include `agents/openai.yaml` or other vendor-specific skill metadata.
+- Describe required capabilities instead of requiring a particular agent product, invocation syntax, tool name, installation directory, or UI. Keep environment-specific registration and adapters in setup documentation or integrations.
+- Resolve resources relative to the skill's verified location and knowledge paths from the explicitly selected Catalog. Do not assume the current working directory or a machine-specific path.
+- Document dependencies and alternatives for optional capabilities. If a required capability is unavailable, report the missing capability and continue only the work that does not depend on it; preserve review and approval boundaries.
+
 ## Catalog selection for this repository
 
 - Unless the user selects a different store, read the root `CATALOG.md` for work here. Use `drafts/` for article candidates and `articles/<theme>/` for approved articles.

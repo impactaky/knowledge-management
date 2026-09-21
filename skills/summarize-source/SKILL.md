@@ -5,6 +5,8 @@ description: ユーザが指定した論文・PDF・公式文書・Webページ�
 
 # Summarize source
 
+実行前に [Skill setup](../../docs/workflow.md#skill-setup) を読み、利用環境に合わせて実行手段と依存機能を確認する。
+
 指定ソースだけから、そのソースが述べる内容と述べない内容を明確にして要約する。`grill-federated` は使わず、指定外ソースを探さない。
 
 ## 手順

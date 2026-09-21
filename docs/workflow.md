@@ -57,12 +57,24 @@ Learning maps update only after the user's final outcome, in a separate commit.
 
 The eight skill directories under `skills/` form one interoperating set. Register
 that directory using your agent's supported skill mechanism, or point repository
-skill entries at the individual directories in this checkout. Preserve their
-relative layout: support references resolve back to this checkout's `foundation/`.
+skill entries at the individual directories in this checkout. If the environment
+has no native skill support, read the selected `SKILL.md` directly and follow its
+instructions. A reference to another skill means reading that skill's `SKILL.md`
+and following its procedure; it does not require a special invocation syntax or
+a separate agent. Skills use `SKILL.md` and portable supporting files, without
+vendor-specific metadata such as `agents/openai.yaml`.
+
+Resolve relative references from each skill's actual location, not the working
+directory or a registration alias. Preserve the checkout's relative layout:
+support references resolve back to its `foundation/` and `docs/` directories.
 Do not copy a SKILL.md alone. For articles intended for this repository, use
 its root Catalog; keep private knowledge in a separately selected store.
-Configure the MCP adapter for the selected Catalog and tell the agent which store
-it may write to. A connected Catalog alone does not authorize writes to its store.
+Select the Catalog through user or repository instructions, explicit tool
+configuration, or `FEDERATION_CATALOG` / `KNOWLEDGE_CATALOG`. Read it through the
+available adapter or directly at its verified location. Use a configured MCP
+adapter, the [Core CLI](setup.md#core-and-mcp), or an equivalent Core integration
+for federation operations. Tell the agent which store it may write to. A connected
+Catalog alone does not authorize writes to its store.
 
 | Skill | Input and output |
 |---|---|
@@ -81,6 +93,12 @@ to the requested material, and optional web/PDF tools for research. No particula
 web, PDF or image-generation provider is required. If a source cannot be read,
 report that limitation rather than inventing content. Independent reviewer agents
 are useful when available; a documented separate reread is the fallback.
+Knowledge-ui is optional: present a configured UI link when available, otherwise
+use an accessible file link, attachment, or the complete draft in the conversation.
+Use ordinary conversation for questions and approval when no dedicated input tool
+exists. If a required capability such as search, file writing or Git is unavailable,
+report the missing operation and continue only independent work; do not claim that
+search, persistence or stock completed. Review and approval rules still apply.
 
 External grilling/domain-modeling and marimo skills were inspected for dependency
 intent, not vendored. Generic interview, glossary/decision and notebook guidance

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Study Topic"
-  short_description: "技術トピックを学習マップに分け、一要素ずつ着実に身につける"
-  default_prompt: "Use $study-topic to create or continue a one-step-at-a-time learning map for this topic."

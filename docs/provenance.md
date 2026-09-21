@@ -14,7 +14,7 @@ The project-wide license remains **undecided**. Third-party licenses below apply
 | `foundation/integrations/hermes-federation/` | Canonical Hermes memory provider for deterministic CATALOG prompt injection and read-only search/grep |
 | `foundation/integrations/hermes-federation-workflows/` | Canonical Hermes workflow discovery plugin with deduplication between shared and store-local workflows |
 | `foundation/tools/knowledge-ui/` | Canonical renderer, frontend, checker and indexer; portable configuration, explicit service/execute opt-ins and offline document generation |
-| `skills/` | Eight canonical workflows, selected references, SVG helper and agent metadata; portable behavior without mandatory private directories |
+| `skills/` | Eight canonical workflows, selected references and SVG helper; portable behavior without vendor-specific metadata or mandatory private directories |
 | `foundation/modules/` | Canonical shared vocabulary for Knowledge Federation and Article Curation |
 | `foundation/tests/` | Synthetic test modules using generated fixtures and synthetic stores; no dependency on active catalogs or live backends |
 | `examples/minimal/`, public explanations, smoke scripts | Synthetic examples and standalone guidance |

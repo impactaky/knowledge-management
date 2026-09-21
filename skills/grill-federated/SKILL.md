@@ -5,9 +5,12 @@ description: Clarify a research question or design, test terms and boundaries, a
 
 # Grill, federated
 
-Read the user-selected Catalog through `get_catalog` or `FEDERATION_CATALOG` /
-`KNOWLEDGE_CATALOG`. Missing selection is a configuration problem; never guess a
-store. Read explicit file entrances and required references. Select relevant
+Read [Skill setup](../../docs/workflow.md#skill-setup) before starting to resolve
+the environment's execution methods and required capabilities.
+
+Read the explicitly selected Catalog through an available adapter or directly at
+its verified location. Missing selection is a configuration problem; never guess
+a store. Read explicit file entrances and required references. Select relevant
 files within directory entrances; an INDEX is not implicitly required.
 
 Clarify purpose, applicability, evidence, completion criteria and unresolved

@@ -5,6 +5,8 @@ description: 問いをgrill-federatedで計画し、Web・文献・コード・�
 
 # Survey
 
+実行前に [Skill setup](../../docs/workflow.md#skill-setup) を読み、利用環境に合わせて実行手段と依存機能を確認する。
+
 問いを先鋭化してから必要なソースを探索し、根拠付きの理解とレビュー可能な記事draftを作る。記事層へは自動でストックしない。
 
 ## 1. 調査を計画する

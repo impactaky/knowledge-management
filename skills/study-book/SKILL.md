@@ -5,6 +5,8 @@ description: PDF書籍を読書マップで少しずつ学ぶ。初回は目次�
 
 # Study book
 
+実行前に [Skill setup](../../docs/workflow.md#skill-setup) を読み、利用環境に合わせて実行手段と依存機能を確認する。
+
 書籍の内容そのものを理解するため、読書マップを状態として持ち、各学習単位を `summarize-source` で読む。外部資料との比較・検証をセッションへ混ぜない。
 
 ## 原則

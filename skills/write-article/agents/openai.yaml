@@ -1,4 +1,0 @@
-interface:
-  display_name: "Write Article"
-  short_description: "整理済みの理解を良い記事へ仕上げレビュー後にストックする"
-  default_prompt: "Use $write-article to turn the prepared understanding in this session into a reviewed article draft."

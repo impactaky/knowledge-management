@@ -5,6 +5,8 @@ description: 整理済みの理解と出自から、自己完結で再読でき�
 
 # Write article
 
+実行前に [Skill setup](../../docs/workflow.md#skill-setup) を読み、利用環境に合わせて実行手段と依存機能を確認する。
+
 十分な理解を、読み直して理解を復元できる記事へ変換し、明示判定後にストックする。規約の正本は このprojectの [Article Curationの語彙](../../foundation/modules/article-curation/CONTEXT.md) にある記事・記事境界・ドラフト・ストック・差し替え・改稿・実行可能記事。
 
 開始前に [references/writing.md](references/writing.md) と [references/stocking.md](references/stocking.md) を読む。実行可能記事を選ぶ場合だけ [references/executable.md](references/executable.md) も読む。
@@ -39,7 +41,7 @@ description: 整理済みの理解と出自から、自己完結で再読でき�
 
 ドラフトが一通り書けたら、ユーザへ提示する前に、別agentを利用できる場合は通し読みを依頼する。利用できない場合は独立した読み直しを行い、その制約をレビュー時に明示する。渡すのは記事だけにして書いた経緯は渡さず、初読の読者として「何について、どの疑問を説明しているか」を要約させる。節の並びと位置づけ、飛躍や重複、理解が増えない段落、自然な日本語としてつまずく箇所を報告させる。構成が整っているだけで良い記事と判定せず、指摘を本文へ戻してから提示する。書き手は自分の意図で行間を補って読むので、通しの読みにくさは自分では検出できない。
 
-レビュー用ポインタは、絶対パスを引数にこのtooling checkoutのルートで次を実行して作る。
+レビュー用ポインタは利用環境で閲覧できる手段を使う。knowledge-uiを利用する場合は、絶対パスを引数にこのtooling checkoutのルートで次を実行して作る。
 
 ```bash
 uv run --project foundation/tools/knowledge-ui python foundation/tools/knowledge-ui/article_url.py /absolute/path/to/article.md
@@ -47,7 +49,7 @@ uv run --project foundation/tools/knowledge-ui python foundation/tools/knowledge
 
 tooling checkoutと知識ストアは別の場所でよい。`KNOWLEDGE_UI_BASE_URL`で閲覧UIのURLを指定する。
 
-ユーザには出力された **knowledge-ui URL** をMarkdownリンクとして提示し、ファイルパスだけを提示しない。これは新規draft、既存記事、ストック後の記事のすべてに適用する。編集や障害調査にパスも必要な場合だけ、リンクの後へ補助情報としてコード表記で添える。
+knowledge-uiを利用できる場合は、出力されたURLをMarkdownリンクとして提示する。利用できない場合は、ユーザが開けるファイルリンク・添付・会話内の全文提示を使う。これは新規draft、既存記事、ストック後の記事のすべてに適用する。ユーザが読めないパスだけを渡してレビュー済みにはしない。
 
 ## 5. ストックまたは却下する
 

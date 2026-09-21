@@ -1,4 +1,0 @@
-interface:
-  display_name: "Summarize Source"
-  short_description: "指定ソースだけを忠実に理解し記事draftまで作る"
-  default_prompt: "Use $summarize-source to read only the source I provide and produce a reviewable article draft without external research."

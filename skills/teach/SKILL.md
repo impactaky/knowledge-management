@@ -5,6 +5,8 @@ description: ユーザがすでに知っていることを、一問一答で曖�
 
 # Teach
 
+実行前に [Skill setup](../../docs/workflow.md#skill-setup) を読み、利用環境に合わせて実行手段と依存機能を確認する。
+
 ユーザ自身をソースとして、対話だけで知識を精密に写し取る。開始時に `grill-federated` skillを読み、一問一答・具体例・用語照合を共通ライブラリとして使う。
 
 ## 聞き取り
