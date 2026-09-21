@@ -249,11 +249,13 @@ draft previews and explicit indexing. Frozen HTML is trusted active content.
 
 Hermes is optional. Deployment-specific orchestration and workflows remain
 outside this repository. Hermes may consume either the generic MCP
-adapter or the native memory provider plugin (`foundation/integrations/hermes-federation`)
-and workflow discovery plugin (`foundation/integrations/hermes-federation-workflows`).
-Configure them under `memory.federation` in `~/.hermes/config.yaml`:
+adapter or the [native memory provider plugin](../foundation/integrations/hermes-federation/README.md).
+Configure the provider under `memory.federation` in `~/.hermes/config.yaml`:
+
 - `catalog_path`: Path to `CATALOG.md` (required; supports environment variables and `~`).
 - `meili_url`: Optional Meilisearch URL for semantic search (e.g. `http://127.0.0.1:7700`); falls back to `MEILI_URL` in the environment.
-- `shared_skills_path`: Optional override for canonical shared skills directory (defaults to `skills/` in the knowledge-management repository).
-- `personal_skills_path`: Optional path to personal or store-specific skills (defaults to `skills/` alongside `catalog_path`).
+
+Register the shared workflows through Hermes' normal skills directory by placing
+symlinks under `~/.hermes/skills/` to the workflow directories in this checkout's
+`skills/`. See [skill setup](workflow.md#skill-setup) for layout requirements.
 There is no undeclared Hermes Python dependency in Core or MCP.

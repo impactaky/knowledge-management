@@ -1,4 +1,4 @@
-"""Synthetic tests for Hermes federation memory provider and workflows plugin."""
+"""Synthetic tests for the Hermes federation memory provider."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
-import tempfile
 from types import ModuleType
 import unittest
 from unittest.mock import patch
@@ -35,27 +34,6 @@ assert provider_spec is not None and provider_spec.loader is not None
 hermes_provider_module = importlib.util.module_from_spec(provider_spec)
 provider_spec.loader.exec_module(hermes_provider_module)
 FederationMemoryProvider = hermes_provider_module.FederationMemoryProvider
-
-# Load hermes-federation-workflows module
-workflows_spec = importlib.util.spec_from_file_location(
-    "hermes_federation_workflows",
-    FOUNDATION / "integrations" / "hermes-federation-workflows" / "__init__.py",
-)
-assert workflows_spec is not None and workflows_spec.loader is not None
-hermes_workflows_module = importlib.util.module_from_spec(workflows_spec)
-workflows_spec.loader.exec_module(hermes_workflows_module)
-
-
-class MockHermesContext:
-    def __init__(self):
-        self.skills: dict[str, tuple[Path, str]] = {}
-        self.memory_providers = []
-
-    def register_skill(self, name: str, path: Path, description: str):
-        self.skills[name] = (path, description)
-
-    def register_memory_provider(self, provider):
-        self.memory_providers.append(provider)
 
 
 class HermesFederationProviderTests(unittest.TestCase):
@@ -144,66 +122,6 @@ class HermesFederationProviderTests(unittest.TestCase):
         for schema in schemas:
             self.assertIn("description", schema)
             self.assertIn("parameters", schema)
-
-
-class HermesWorkflowsPluginTests(unittest.TestCase):
-    def test_discovers_canonical_shared_workflows(self) -> None:
-        ctx = MockHermesContext()
-        with patch.object(hermes_workflows_module, "_federation_config", return_value={}):
-            hermes_workflows_module.register(ctx)
-
-        # 8 canonical workflows must be discovered
-        expected_skills = {
-            "distill",
-            "grill-federated",
-            "study-book",
-            "study-topic",
-            "summarize-source",
-            "survey",
-            "teach",
-            "write-article",
-        }
-        self.assertTrue(expected_skills.issubset(set(ctx.skills.keys())))
-        for skill_name in expected_skills:
-            path, desc = ctx.skills[skill_name]
-            self.assertTrue(path.is_file())
-            self.assertTrue(desc)
-
-    def test_discovers_personal_skills_and_avoids_duplicates(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            personal_skills = Path(tmpdir) / "skills"
-            personal_skills.mkdir()
-
-            # Create a personal-only skill
-            custom_skill = personal_skills / "custom-workflow"
-            custom_skill.mkdir()
-            (custom_skill / "SKILL.md").write_text(
-                "---\nname: custom-workflow\ndescription: Personal workflow description\n---\n# Custom\n",
-                encoding="utf-8",
-            )
-
-            # Create a duplicate of a canonical skill (e.g. write-article)
-            dup_skill = personal_skills / "write-article"
-            dup_skill.mkdir()
-            (dup_skill / "SKILL.md").write_text(
-                "---\nname: write-article\ndescription: Duplicate personal write-article\n---\n# Dup\n",
-                encoding="utf-8",
-            )
-
-            ctx = MockHermesContext()
-            config = {
-                "personal_skills_path": str(personal_skills),
-            }
-            with patch.object(hermes_workflows_module, "_federation_config", return_value=config):
-                hermes_workflows_module.register(ctx)
-
-            # Custom workflow is registered
-            self.assertIn("custom-workflow", ctx.skills)
-            self.assertEqual(ctx.skills["custom-workflow"][1], "Personal workflow description")
-
-            # Canonical write-article is preserved, NOT overridden by the duplicate personal one
-            canonical_write_article = ROOT / "skills" / "write-article" / "SKILL.md"
-            self.assertEqual(ctx.skills["write-article"][0], canonical_write_article)
 
 
 if __name__ == "__main__":

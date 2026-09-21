@@ -2,11 +2,11 @@
 
 Canonical, reusable mechanisms for creating, reviewing, adopting, searching and browsing
 knowledge across knowledge stores. This repository is the authoritative source for the
-shared core, MCP adapter, UI, indexer, checker, Hermes plugins, workflows, and vocabulary.
+shared core, MCP adapter, UI, indexer, checker, Hermes memory provider, workflows, and vocabulary.
 Users and organizations manage their actual knowledge in separate stores configured by
 selecting their own Catalog.
 
-Core, MCP, the browser, indexer, checker, Hermes plugins, and eight knowledge workflows are
+Core, MCP, the browser, indexer, checker, Hermes memory provider, and eight knowledge workflows are
 implemented here. The bundled store contains only synthetic examples.
 **Repository creation has been authorized by the author; project license remains undecided.**
 No project-wide license is granted by this repository; see [provenance and notices](docs/provenance.md).
