@@ -17,11 +17,13 @@ import time
 import unittest
 from unittest.mock import patch
 from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[2]
 MINIMAL_CATALOG = ROOT / "examples" / "minimal" / "CATALOG.md"
 RUN_SH = ROOT / "foundation" / "tools" / "knowledge-ui" / "run.sh"
 UI_DIR = ROOT / "foundation" / "tools" / "knowledge-ui"
+LAUNCH_PY = UI_DIR / "launch.py"
 CORE_DIR = ROOT / "foundation" / "integrations" / "federation-core"
 if str(UI_DIR) not in sys.path:
     sys.path.insert(0, str(UI_DIR))
@@ -917,6 +919,159 @@ http.server.HTTPServer((host, int(port_str)), H).serve_forever()
 
         # Parent environment must not be mutated
         self.assertEqual(os.environ.get("KNOWLEDGE_AUTO_INDEX"), parent_before.get("KNOWLEDGE_AUTO_INDEX"))
+
+    def test_real_launcher_subprocess_sigterm_reaps_owned_backends_while_waiting_for_ui(self):
+        """Regression test for signal arrival while launcher is blocked in UI Popen.wait().
+        Verifies that launcher exits cleanly, terminates owned backend process groups,
+        and leaves reused external services untouched.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            meili_pid_file = tmp_path / "managed_meili.pid"
+            fake_meili = tmp_path / "fake_meilisearch"
+            fake_meili_code = f"""#!/usr/bin/env python3
+import http.server, os, sys
+with open('{meili_pid_file}', 'w') as f:
+    f.write(str(os.getpid()))
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(b'{{"status":"available"}}')
+    def log_message(self, *a): pass
+addr = sys.argv[sys.argv.index("--http-addr") + 1] if "--http-addr" in sys.argv else "127.0.0.1:7700"
+host, port_str = addr.rsplit(":", 1)
+s = http.server.HTTPServer((host, int(port_str)), H)
+s.serve_forever()
+"""
+            fake_meili.write_text(fake_meili_code, encoding="utf-8")
+            fake_meili.chmod(0o755)
+
+            # 1. Start an external reused service to verify it remains untouched
+            external_port = get_free_port()
+            fake_external = tmp_path / "fake_external.py"
+            fake_external.write_text(f"""#!/usr/bin/env python3
+import http.server
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'{{}}')
+    def log_message(self, *a): pass
+http.server.HTTPServer(('127.0.0.1', {external_port}), H).serve_forever()
+""", encoding="utf-8")
+            external_proc = subprocess.Popen([sys.executable, str(fake_external)])
+
+            # Wait for external service to be responsive
+            deadline = time.monotonic() + 5.0
+            external_ready = False
+            while time.monotonic() < deadline:
+                try:
+                    with urlopen(f"http://127.0.0.1:{external_port}", timeout=0.2) as r:
+                        if r.status == 200:
+                            external_ready = True
+                            break
+                except Exception:
+                    time.sleep(0.05)
+            self.assertTrue(external_ready, "External service failed to start")
+
+            # 2. Configure launcher environment for managed meili + UI
+            meili_port = get_free_port()
+            ui_port = get_free_port()
+            launcher_env = os.environ.copy()
+            launcher_env.update({
+                "FEDERATION_CATALOG": str(MINIMAL_CATALOG),
+                "KNOWLEDGE_MANAGE_MEILI": "1",
+                "MEILI_URL": f"http://127.0.0.1:{meili_port}",
+                "MEILI_BIN": str(fake_meili),
+                "KNOWLEDGE_DATA_DIR": str(tmp_path / "runtime_data"),
+                "UI_HOST": "127.0.0.1",
+                "UI_PORT": str(ui_port),
+            })
+
+            launcher_proc = subprocess.Popen(
+                [sys.executable, str(LAUNCH_PY)],
+                cwd=str(UI_DIR),
+                env=launcher_env,
+            )
+
+            try:
+                # 3. Wait for UI to become fully responsive (/api/tree)
+                deadline = time.monotonic() + 15.0
+                ui_ready = False
+                while time.monotonic() < deadline:
+                    if launcher_proc.poll() is not None:
+                        break
+                    try:
+                        req = Request(f"http://127.0.0.1:{ui_port}/api/tree")
+                        with urlopen(req, timeout=0.5) as resp:
+                            if resp.status == 200:
+                                ui_ready = True
+                                break
+                    except Exception:
+                        time.sleep(0.1)
+
+                self.assertTrue(ui_ready, f"UI failed to start: exit code {launcher_proc.poll()}")
+                self.assertIsNone(launcher_proc.poll())
+
+                # Wait for managed backend PID file
+                for _ in range(50):
+                    if meili_pid_file.exists():
+                        break
+                    time.sleep(0.1)
+                self.assertTrue(meili_pid_file.exists())
+                managed_pid = int(meili_pid_file.read_text().strip())
+
+                # Verify managed backend is running
+                os.kill(managed_pid, 0)
+
+                # 4. Send SIGTERM to the launcher while it is waiting on the UI process
+                launcher_proc.terminate()
+
+                # 5. Assert launcher exits within bound
+                launcher_exit = launcher_proc.wait(timeout=10.0)
+                self.assertIsNotNone(launcher_exit)
+
+                # 6. Assert owned managed backend died
+                deadline = time.monotonic() + 5.0
+                backend_dead = False
+                while time.monotonic() < deadline:
+                    try:
+                        os.kill(managed_pid, 0)
+                        try:
+                            with open(f"/proc/{managed_pid}/status") as f:
+                                status_txt = f.read()
+                                if "State:\tZ" in status_txt or "State: Z" in status_txt:
+                                    backend_dead = True
+                                    break
+                        except (FileNotFoundError, ProcessLookupError):
+                            backend_dead = True
+                            break
+                        time.sleep(0.1)
+                    except ProcessLookupError:
+                        backend_dead = True
+                        break
+                self.assertTrue(backend_dead, f"Managed backend PID {managed_pid} survived launcher SIGTERM!")
+
+                # 7. Assert external reused service was NOT touched
+                self.assertIsNone(external_proc.poll())
+                os.kill(external_proc.pid, 0)
+
+            finally:
+                # Ensure all test processes are cleaned up
+                if launcher_proc.poll() is None:
+                    launcher_proc.kill()
+                    launcher_proc.wait()
+                if external_proc.poll() is None:
+                    external_proc.kill()
+                    external_proc.wait()
+                if meili_pid_file.exists():
+                    try:
+                        pid = int(meili_pid_file.read_text().strip())
+                        os.kill(pid, signal.SIGKILL)
+                    except Exception:
+                        pass
 
 
 class TestRunScript(unittest.TestCase):

@@ -581,7 +581,7 @@ def terminate_process_group(
             try:
                 proc.kill()
                 proc.wait(timeout=1.0)
-            except (ProcessLookupError, OSError):
+            except (subprocess.TimeoutExpired, ProcessLookupError, OSError):
                 pass
 
 
@@ -604,12 +604,25 @@ class Launcher:
             return
         self._cleaned_up = True
 
+        try:
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        except (ValueError, OSError):
+            pass
+
         if self.ui_process is not None:
-            self._terminate_process_group(self.ui_process)
-            self.ui_process = None
+            try:
+                self._terminate_process_group(self.ui_process)
+            except Exception as exc:
+                print(f"Error terminating UI process: {exc}", file=sys.stderr)
+            finally:
+                self.ui_process = None
 
         for proc in reversed(self.owned_services):
-            self._terminate_process_group(proc)
+            try:
+                self._terminate_process_group(proc)
+            except Exception as exc:
+                print(f"Error terminating owned service: {exc}", file=sys.stderr)
         self.owned_services.clear()
 
     def start_meili(self) -> None:
@@ -790,7 +803,6 @@ class Launcher:
 
     def run(self) -> int:
         def sig_handler(signum, frame):
-            self.cleanup()
             sys.exit(128 + signum)
 
         signal.signal(signal.SIGINT, sig_handler)
@@ -855,12 +867,9 @@ class Launcher:
                 env=ui_env,
                 start_new_session=True,
             )
-            exit_code = self.ui_process.wait()
+            return self.ui_process.wait()
+        finally:
             self.cleanup()
-            return exit_code
-        except Exception:
-            self.cleanup()
-            raise
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -888,6 +897,9 @@ def main(argv: list[str] | None = None) -> int:
     launcher = Launcher(config)
     try:
         return launcher.run()
+    except SystemExit as exc:
+        code = exc.code
+        return code if isinstance(code, int) else (128 + signal.SIGTERM)
     except Exception as exc:
         print(f"Launcher error: {exc}", file=sys.stderr)
         return 1
