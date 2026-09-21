@@ -18,6 +18,16 @@ import unittest
 from unittest.mock import patch
 from urllib.parse import urlparse
 
+ROOT = Path(__file__).resolve().parents[2]
+MINIMAL_CATALOG = ROOT / "examples" / "minimal" / "CATALOG.md"
+RUN_SH = ROOT / "foundation" / "tools" / "knowledge-ui" / "run.sh"
+UI_DIR = ROOT / "foundation" / "tools" / "knowledge-ui"
+CORE_DIR = ROOT / "foundation" / "integrations" / "federation-core"
+if str(UI_DIR) not in sys.path:
+    sys.path.insert(0, str(UI_DIR))
+if str(CORE_DIR) not in sys.path:
+    sys.path.insert(0, str(CORE_DIR))
+
 import launch
 from launch import (
     ConfigurationError,
@@ -29,9 +39,9 @@ from launch import (
     parse_bool,
 )
 
-ROOT = Path(__file__).resolve().parents[2]
-MINIMAL_CATALOG = ROOT / "examples" / "minimal" / "CATALOG.md"
-RUN_SH = ROOT / "foundation" / "tools" / "knowledge-ui" / "run.sh"
+with patch.dict(os.environ, {"FEDERATION_CATALOG": str(MINIMAL_CATALOG)}):
+    import server
+
 
 
 def get_free_port() -> int:
@@ -49,9 +59,11 @@ class MockHealthServer:
         self.server: http.server.HTTPServer | None = None
         self.thread: threading.Thread | None = None
         self.port: int = 0
+        self.received_posts: list[tuple[str, bytes]] = []
 
     def start(self) -> str:
         routes = self.routes
+        received_posts = self.received_posts
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
@@ -62,6 +74,9 @@ class MockHealthServer:
                 self.wfile.write(body)
 
             def do_POST(self):
+                content_len = int(self.headers.get("Content-Length", 0))
+                post_body = self.rfile.read(content_len) if content_len > 0 else b""
+                received_posts.append((self.path, post_body))
                 status, body = routes.get(self.path, (404, b"Not Found"))
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
@@ -321,6 +336,84 @@ class TestLauncherConfig(unittest.TestCase):
         cfg = LauncherConfig.from_env(env)
         self.assertEqual(cfg.ollama_embed_url, "https://remote-gpu.company.internal/api/embed")
 
+    def test_endpoint_ipv6_and_malformed_url_validation(self):
+        base = {"FEDERATION_CATALOG": str(MINIMAL_CATALOG)}
+
+        # Managed Meili IPv6 explicitly rejected
+        with self.assertRaises(ConfigurationError) as ctx:
+            LauncherConfig.from_env({**base, "KNOWLEDGE_MANAGE_MEILI": "1", "MEILI_URL": "http://[::1]:7700"})
+        self.assertIn("Managed native services do not support IPv6", str(ctx.exception))
+
+        # Managed Ollama IPv6 explicitly rejected
+        with self.assertRaises(ConfigurationError) as ctx:
+            LauncherConfig.from_env({**base, "KNOWLEDGE_MANAGE_OLLAMA": "1", "OLLAMA_HOST": "[::1]:11434"})
+        self.assertIn("Managed native services do not support IPv6", str(ctx.exception))
+        with self.assertRaises(ConfigurationError) as ctx:
+            LauncherConfig.from_env({**base, "KNOWLEDGE_MANAGE_OLLAMA": "1", "OLLAMA_HOST": "::1:11434"})
+        self.assertIn("Managed native services do not support IPv6", str(ctx.exception))
+
+        # Nonnumeric / invalid port in OLLAMA_HOST
+        with self.assertRaises(ConfigurationError) as ctx:
+            LauncherConfig.from_env({**base, "KNOWLEDGE_MANAGE_OLLAMA": "1", "OLLAMA_HOST": "127.0.0.1:invalid"})
+        self.assertIn("Invalid port in OLLAMA_HOST", str(ctx.exception))
+
+        # Managed Ollama host with HTTPS embed URL rejected
+        with self.assertRaises(ConfigurationError) as ctx:
+            LauncherConfig.from_env({
+                **base,
+                "KNOWLEDGE_MANAGE_OLLAMA": "1",
+                "OLLAMA_HOST": "127.0.0.1:11434",
+                "OLLAMA_EMBED_URL": "https://127.0.0.1:11434/api/embed",
+            })
+        self.assertIn("requires HTTP scheme", str(ctx.exception))
+
+        # Managed Ollama host with wrong path embed URL rejected
+        with self.assertRaises(ConfigurationError) as ctx:
+            LauncherConfig.from_env({
+                **base,
+                "KNOWLEDGE_MANAGE_OLLAMA": "1",
+                "OLLAMA_HOST": "127.0.0.1:11434",
+                "OLLAMA_EMBED_URL": "http://127.0.0.1:11434/wrong/path",
+            })
+        self.assertIn("must have path '/api/embed'", str(ctx.exception))
+
+        # External warmup URL with non-http scheme (file://) rejected
+        with self.assertRaises(ConfigurationError) as ctx:
+            LauncherConfig.from_env({
+                **base,
+                "KNOWLEDGE_WARMUP_EMBEDDING": "1",
+                "OLLAMA_WARMUP_URL": "file:///etc/passwd",
+            })
+        self.assertIn("requires HTTP or HTTPS scheme", str(ctx.exception))
+
+        # External warmup URL with wrong path rejected
+        with self.assertRaises(ConfigurationError) as ctx:
+            LauncherConfig.from_env({
+                **base,
+                "KNOWLEDGE_WARMUP_EMBEDDING": "1",
+                "OLLAMA_WARMUP_URL": "http://127.0.0.1:11434/not/embed",
+            })
+        self.assertIn("must have path '/api/embed'", str(ctx.exception))
+
+        # KNOWLEDGE_WATCH_INTERVAL="" rejected
+        with self.assertRaises(ConfigurationError) as ctx:
+            LauncherConfig.from_env({**base, "KNOWLEDGE_WATCH_INTERVAL": ""})
+        self.assertIn("Invalid KNOWLEDGE_WATCH_INTERVAL", str(ctx.exception))
+
+        # MEILI_URL=http://127.0.0.1:0 usable as disabled external test target
+        cfg = LauncherConfig.from_env({**base, "KNOWLEDGE_MANAGE_MEILI": "0", "MEILI_URL": "http://127.0.0.1:0"})
+        self.assertEqual(cfg.meili_url, "http://127.0.0.1:0")
+
+        # Derived embed URL with omitted port defaults to 80 (not 11434) and contradicts 11434
+        with self.assertRaises(ConfigurationError) as ctx:
+            LauncherConfig.from_env({
+                **base,
+                "KNOWLEDGE_MANAGE_OLLAMA": "1",
+                "OLLAMA_HOST": "127.0.0.1:11434",
+                "OLLAMA_EMBED_URL": "http://127.0.0.1/api/embed",
+            })
+        self.assertIn("Contradictory Ollama configuration", str(ctx.exception))
+
 
 class TestLauncherExecution(unittest.TestCase):
     def test_is_healthy_probes(self):
@@ -451,6 +544,242 @@ s.serve_forever()
                     grandchild_dead = True
                     break
             self.assertTrue(grandchild_dead, "Grandchild survived process group termination!")
+
+    def test_stubborn_grandchild_reaped_on_cleanup(self):
+        """Verify that a stubborn grandchild ignoring SIGTERM is killed via SIGKILL when leader exits."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            grandchild_pid_file = tmp_path / "stubborn.pid"
+            mock_bin = tmp_path / "stubborn_spawner"
+            mock_bin_code = f"""#!/usr/bin/env python3
+import http.server, os, signal, subprocess, sys, time
+
+# Grandchild explicitly ignores SIGTERM!
+p = subprocess.Popen([
+    sys.executable, "-c",
+    "import os, signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); open('{grandchild_pid_file}', 'w').write(str(os.getpid())); time.sleep(100)"
+])
+
+args = sys.argv[1:]
+addr = "127.0.0.1:7700"
+if "--http-addr" in args:
+    addr = args[args.index("--http-addr") + 1]
+host, port_str = addr.rsplit(":", 1)
+
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(b'{{"status":"available"}}')
+    def log_message(self, *a):
+        pass
+
+s = http.server.HTTPServer((host, int(port_str)), H)
+s.serve_forever()
+"""
+            mock_bin.write_text(mock_bin_code, encoding="utf-8")
+            mock_bin.chmod(0o755)
+
+            port = get_free_port()
+            env = {
+                "FEDERATION_CATALOG": str(MINIMAL_CATALOG),
+                "KNOWLEDGE_MANAGE_MEILI": "1",
+                "MEILI_URL": f"http://127.0.0.1:{port}",
+                "MEILI_BIN": str(mock_bin),
+                "KNOWLEDGE_DATA_DIR": str(tmp_path),
+            }
+            cfg = LauncherConfig.from_env(env)
+            launcher = Launcher(cfg)
+
+            launcher.start_meili()
+            self.assertEqual(len(launcher.owned_services), 1)
+
+            for _ in range(50):
+                if grandchild_pid_file.exists():
+                    break
+                time.sleep(0.1)
+            self.assertTrue(grandchild_pid_file.exists())
+            grandchild_pid = int(grandchild_pid_file.read_text().strip())
+
+            # Verify running
+            os.kill(grandchild_pid, 0)
+
+            # Cleanup must wait grace period, send SIGKILL and terminate stubborn grandchild
+            launcher.cleanup()
+
+            deadline = time.monotonic() + 5.0
+            grandchild_dead = False
+            while time.monotonic() < deadline:
+                try:
+                    os.kill(grandchild_pid, 0)
+                    try:
+                        with open(f"/proc/{grandchild_pid}/status") as f:
+                            status_txt = f.read()
+                            if "State:\tZ (zombie)" in status_txt or "State: Z" in status_txt:
+                                grandchild_dead = True
+                                break
+                    except (FileNotFoundError, ProcessLookupError):
+                        grandchild_dead = True
+                        break
+                    time.sleep(0.1)
+                except ProcessLookupError:
+                    grandchild_dead = True
+                    break
+            self.assertTrue(grandchild_dead, "Stubborn grandchild survived SIGKILL cleanup!")
+
+    def test_server_shutdown_cleans_up_stubborn_marimo_session(self):
+        """Verify server shutdown event cleans up process group of live marimo session with stubborn child."""
+        import server
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            grandchild_pid_file = tmp_path / "marimo_stubborn.pid"
+            child_script = (
+                "import os, signal, subprocess, sys, time; "
+                f"c = subprocess.Popen([sys.executable, '-c', 'import os, signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); open(\"{grandchild_pid_file}\", \"w\").write(str(os.getpid())); time.sleep(100)']); "
+                "time.sleep(100)"
+            )
+            proc = subprocess.Popen(
+                [sys.executable, "-c", child_script],
+                start_new_session=True,
+            )
+            for _ in range(50):
+                if grandchild_pid_file.exists():
+                    break
+                time.sleep(0.1)
+            self.assertTrue(grandchild_pid_file.exists())
+            grandchild_pid = int(grandchild_pid_file.read_text().strip())
+
+            server.LIVE_MARIMO_PROCESSES["test_stubborn"] = {"process": proc, "last_used": time.time()}
+
+            server.shutdown_event()
+
+            self.assertEqual(len(server.LIVE_MARIMO_PROCESSES), 0)
+            self.assertIsNotNone(proc.poll())
+
+            deadline = time.monotonic() + 5.0
+            grandchild_dead = False
+            while time.monotonic() < deadline:
+                try:
+                    os.kill(grandchild_pid, 0)
+                    try:
+                        with open(f"/proc/{grandchild_pid}/status") as f:
+                            status_txt = f.read()
+                            if "State:\tZ (zombie)" in status_txt or "State: Z" in status_txt:
+                                grandchild_dead = True
+                                break
+                    except (FileNotFoundError, ProcessLookupError):
+                        grandchild_dead = True
+                        break
+                    time.sleep(0.1)
+                except ProcessLookupError:
+                    grandchild_dead = True
+                    break
+            self.assertTrue(grandchild_dead, "Grandchild survived server shutdown cleanup!")
+
+    def test_idle_marimo_cleanup_when_leader_exited(self):
+        """Verify marimo cleanup handles already-exited leaders and cleans up lingering process group."""
+        import server
+        proc = subprocess.Popen([sys.executable, "-c", "import sys; sys.exit(0)"], start_new_session=True)
+        proc.wait()
+        server.LIVE_MARIMO_PROCESSES["test_exited"] = {"process": proc, "last_used": time.time() - 9999}
+
+        launch.terminate_process_group(proc, grace_period=0.5)
+        server.LIVE_MARIMO_PROCESSES.pop("test_exited", None)
+        self.assertNotIn("test_exited", server.LIVE_MARIMO_PROCESSES)
+
+    def test_readiness_timeout_cleans_up_process(self):
+        """Verify that when a managed service fails to become ready within timeout, owned process is cleaned up."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            unhealthy_bin = tmp_path / "unhealthy_bin"
+            unhealthy_code = """#!/usr/bin/env python3
+import http.server, sys
+args = sys.argv[1:]
+addr = args[args.index("--http-addr") + 1] if "--http-addr" in args else "127.0.0.1:7700"
+host, port_str = addr.rsplit(":", 1)
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(503)
+        self.end_headers()
+    def log_message(self, *a): pass
+http.server.HTTPServer((host, int(port_str)), H).serve_forever()
+"""
+            unhealthy_bin.write_text(unhealthy_code, encoding="utf-8")
+            unhealthy_bin.chmod(0o755)
+
+            port = get_free_port()
+            env = {
+                "FEDERATION_CATALOG": str(MINIMAL_CATALOG),
+                "KNOWLEDGE_MANAGE_MEILI": "1",
+                "MEILI_URL": f"http://127.0.0.1:{port}",
+                "MEILI_BIN": str(unhealthy_bin),
+                "KNOWLEDGE_DATA_DIR": str(tmp_path),
+            }
+            cfg = LauncherConfig.from_env(env)
+            launcher = Launcher(cfg)
+
+            start_time = time.monotonic()
+            def mock_monotonic():
+                nonlocal start_time
+                start_time += 10.0
+                return start_time
+
+            with patch("time.monotonic", side_effect=mock_monotonic):
+                with self.assertRaises(RuntimeError) as ctx:
+                    launcher.start_meili()
+
+            self.assertIn("failed to become ready", str(ctx.exception))
+            self.assertEqual(len(launcher.owned_services), 0)
+
+    def test_warmup_success(self):
+        server = MockHealthServer({"/api/embed": (200, b'{"embeddings":[[0.1, 0.2]]}')})
+        base_url = server.start()
+        try:
+            env = {
+                "FEDERATION_CATALOG": str(MINIMAL_CATALOG),
+                "KNOWLEDGE_WARMUP_EMBEDDING": "1",
+                "OLLAMA_WARMUP_URL": f"{base_url}/api/embed",
+                "OLLAMA_EMBED_MODEL": "bge-m3",
+            }
+            cfg = LauncherConfig.from_env(env)
+            launcher = Launcher(cfg)
+
+            captured_stdout = io.StringIO()
+            with patch("sys.stdout", captured_stdout):
+                launcher.warmup()
+            self.assertIn("preloaded (keep_alive=-1)", captured_stdout.getvalue())
+
+            self.assertEqual(len(server.received_posts), 1)
+            path, body_bytes = server.received_posts[0]
+            self.assertEqual(path, "/api/embed")
+            payload = json.loads(body_bytes.decode("utf-8"))
+            self.assertEqual(payload.get("model"), "bge-m3")
+            self.assertEqual(payload.get("input"), "knowledge federation search warmup")
+            self.assertEqual(payload.get("keep_alive"), -1)
+        finally:
+            server.stop()
+
+    def test_warmup_fallback_on_error(self):
+        server = MockHealthServer({"/api/embed": (500, b'{"error":"gpu out of memory"}')})
+        base_url = server.start()
+        try:
+            env = {
+                "FEDERATION_CATALOG": str(MINIMAL_CATALOG),
+                "KNOWLEDGE_WARMUP_EMBEDDING": "1",
+                "OLLAMA_WARMUP_URL": f"{base_url}/api/embed",
+            }
+            cfg = LauncherConfig.from_env(env)
+            launcher = Launcher(cfg)
+
+            captured_stderr = io.StringIO()
+            with patch("sys.stderr", captured_stderr):
+                launcher.warmup()
+            output = captured_stderr.getvalue()
+            self.assertTrue("warmup returned status 500" in output or "warmup failed" in output)
+            self.assertIn("knowledge-ui will start with lexical article search", output)
+        finally:
+            server.stop()
 
     def test_meili_startup_failure_cleans_up_and_reports(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -611,46 +940,51 @@ class TestRunScript(unittest.TestCase):
         self.assertIn("env file not found", res.stderr)
 
     def test_run_sh_escapes_spaces_and_preserves_exact_argv_boundaries(self):
-        with tempfile.TemporaryDirectory(prefix="test spaces ") as tmp:
-            tmp_path = Path(tmp)
-            work_dir = tmp_path / "caller dir"
-            work_dir.mkdir()
-            env_file = work_dir / "my config.env"
-            env_file.write_text("UI_PORT=7776\n", encoding="utf-8")
+        for name in ("my config.env", "one\\name.env", "one\\ name.env", "tab\tname.env"):
+            with tempfile.TemporaryDirectory(prefix="test spaces ") as tmp:
+                tmp_path = Path(tmp)
+                work_dir = tmp_path / "caller dir"
+                work_dir.mkdir()
+                env_file = work_dir / name
+                env_file.write_text("UI_PORT=7776\n", encoding="utf-8")
 
-            bin_dir = tmp_path / "bin"
-            bin_dir.mkdir()
-            argv_log = tmp_path / "uv_argv.json"
+                bin_dir = tmp_path / "bin"
+                bin_dir.mkdir()
+                argv_log = tmp_path / "uv_argv.json"
 
-            # Mock uv script dumping exact sys.argv[1:] as JSON
-            mock_uv = bin_dir / "uv"
-            mock_uv.write_text(
-                "#!/usr/bin/env python3\n"
-                "import json, sys\n"
-                f"with open('{argv_log}', 'w') as f:\n"
-                "    json.dump(sys.argv[1:], f)\n",
-                encoding="utf-8",
-            )
-            mock_uv.chmod(0o755)
+                # Mock uv script dumping exact sys.argv[1:] as JSON
+                mock_uv = bin_dir / "uv"
+                mock_uv.write_text(
+                    "#!/usr/bin/env python3\n"
+                    "import json, sys\n"
+                    f"with open('{argv_log}', 'w') as f:\n"
+                    "    json.dump(sys.argv[1:], f)\n",
+                    encoding="utf-8",
+                )
+                mock_uv.chmod(0o755)
 
-            env = os.environ.copy()
-            env["PATH"] = f"{bin_dir}:{env['PATH']}"
-            res = subprocess.run(
-                ["bash", str(RUN_SH), "--env-file", "my config.env"],
-                cwd=str(work_dir),
-                env=env,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(res.returncode, 0, res.stderr)
-            args = json.loads(argv_log.read_text(encoding="utf-8"))
+                env = os.environ.copy()
+                env["PATH"] = f"{bin_dir}:{env['PATH']}"
+                res = subprocess.run(
+                    ["bash", str(RUN_SH), "--env-file", name],
+                    cwd=str(work_dir),
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(res.returncode, 0, f"Failed for {name!r}: {res.stderr}")
+                args = json.loads(argv_log.read_text(encoding="utf-8"))
 
-            self.assertIn("--env-file", args)
-            idx = args.index("--env-file")
-            # The argument following --env-file must have spaces escaped with backslash for uv 0.12.x
-            expected_escaped = str(env_file).replace(" ", "\\ ")
-            self.assertEqual(args[idx + 1], expected_escaped)
-            self.assertEqual(args[-2:], ["python", "launch.py"])
+                self.assertIn("--env-file", args)
+                idx = args.index("--env-file")
+                expected_escaped = (
+                    str(env_file)
+                    .replace("\\", "\\\\")
+                    .replace(" ", "\\ ")
+                    .replace("\t", "\\\t")
+                )
+                self.assertEqual(args[idx + 1], expected_escaped)
+                self.assertEqual(args[-2:], ["python", "launch.py"])
 
 
 if __name__ == "__main__":

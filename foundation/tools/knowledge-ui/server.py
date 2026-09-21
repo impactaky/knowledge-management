@@ -45,6 +45,7 @@ from pygments.lexers import TextLexer, get_lexer_by_name
 from indexer import extract_marimo_markdown, extract_markdown_title, main as run_indexer
 from indexer import parse_catalog as read_catalog_packages
 from indexer import corpus_fingerprint as index_corpus_fingerprint
+from launch import terminate_process_group
 
 CORE_PATH = Path(__file__).resolve().parents[2] / "integrations" / "federation-core"
 if str(CORE_PATH) not in sys.path:
@@ -764,16 +765,12 @@ async def _cleanup_live_marimo() -> None:
                 proc = entry["process"]
                 expired = now - entry["last_used"] > LIVE_MARIMO_IDLE_SECONDS
                 if not _is_process_running(proc):
+                    terminate_process_group(proc, grace_period=0.5)
                     LIVE_MARIMO_PROCESSES.pop(key, None)
                     continue
                 if not expired:
                     continue
-                proc.terminate()
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait(timeout=5)
+                terminate_process_group(proc, grace_period=2.0)
                 LIVE_MARIMO_PROCESSES.pop(key, None)
 
 
@@ -825,25 +822,8 @@ def shutdown_event() -> None:
     for session in list(LIVE_MARIMO_PROCESSES.values()):
         proc = session.get("process")
         if proc:
-            pgid = getattr(proc, "pid", None)
-            if pgid is not None:
-                try:
-                    os.killpg(pgid, signal.SIGTERM)
-                except (ProcessLookupError, OSError):
-                    try:
-                        proc.terminate()
-                    except OSError:
-                        pass
-                try:
-                    proc.wait(timeout=2.0)
-                except (subprocess.TimeoutExpired, OSError):
-                    try:
-                        os.killpg(pgid, signal.SIGKILL)
-                    except (ProcessLookupError, OSError):
-                        try:
-                            proc.kill()
-                        except OSError:
-                            pass
+            terminate_process_group(proc, grace_period=1.0)
+    LIVE_MARIMO_PROCESSES.clear()
 
 
 async def _index_job() -> bool:

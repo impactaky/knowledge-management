@@ -64,6 +64,97 @@ def is_loopback_host(host: str | None) -> bool:
         return False
 
 
+def check_managed_loopback_host(hostname: str | None, name: str, original: str) -> None:
+    """Ensure host for a managed native target is strictly IPv4 loopback or localhost."""
+    if not hostname:
+        raise ConfigurationError(f"{name} must specify a valid host ({original!r}).")
+    h = hostname.strip().lower()
+    if ":" in h or h.startswith("[") or h.endswith("]"):
+        raise ConfigurationError(
+            f"Managed native services do not support IPv6 addresses: {original!r}. "
+            "Use IPv4 loopback (127.0.0.1) or localhost."
+        )
+    if not is_loopback_host(h):
+        raise ConfigurationError(
+            f"Cannot manage remote {name} target: {original!r}. "
+            "Managed native services must be local (loopback)."
+        )
+
+
+def validate_url(
+    url_str: str,
+    name: str,
+    *,
+    require_http_only: bool = False,
+    disallow_credentials: bool = True,
+    disallow_path: bool = False,
+    expected_path: str | None = None,
+    disallow_query_fragment: bool = True,
+    allow_zero_port: bool = False,
+) -> ParseResult:
+    """Parse and validate URL, wrapping any parse or port errors in ConfigurationError."""
+    if not url_str or not url_str.strip():
+        raise ConfigurationError(f"{name} cannot be empty.")
+    url_str = url_str.strip()
+    try:
+        parsed = urlparse(url_str)
+    except Exception as exc:
+        raise ConfigurationError(f"Invalid URL for {name}: {url_str!r} ({exc})")
+
+    if not parsed.scheme:
+        raise ConfigurationError(f"Invalid URL for {name}: {url_str!r}. Scheme and host:port required.")
+
+    scheme_lower = parsed.scheme.lower()
+    if require_http_only:
+        if scheme_lower != "http":
+            raise ConfigurationError(
+                f"{name} requires HTTP scheme (got {parsed.scheme!r} in {url_str!r})."
+            )
+    else:
+        if scheme_lower not in ("http", "https"):
+            raise ConfigurationError(
+                f"{name} requires HTTP or HTTPS scheme (got {parsed.scheme!r} in {url_str!r})."
+            )
+
+    if not parsed.netloc:
+        raise ConfigurationError(f"Invalid URL for {name}: {url_str!r}. Scheme and host:port required.")
+
+    if disallow_credentials and (parsed.username or parsed.password):
+        raise ConfigurationError(
+            f"{name} cannot contain authentication credentials: {url_str!r}"
+        )
+
+    if disallow_path and parsed.path not in ("", "/"):
+        raise ConfigurationError(
+            f"{name} cannot contain a path component: {url_str!r}"
+        )
+
+    if expected_path is not None:
+        norm_path = parsed.path.rstrip("/")
+        expected_norm = expected_path.rstrip("/")
+        if norm_path != expected_norm:
+            raise ConfigurationError(
+                f"{name} must have path {expected_path!r} (got {parsed.path!r} in {url_str!r})."
+            )
+
+    if disallow_query_fragment and (parsed.query or parsed.fragment):
+        raise ConfigurationError(
+            f"{name} cannot contain query or fragment: {url_str!r}"
+        )
+
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ConfigurationError(f"Invalid port in {name}: {url_str!r} ({exc})")
+
+    if port is not None:
+        min_port = 0 if allow_zero_port else 1
+        if not (min_port <= port <= 65535):
+            raise ConfigurationError(f"Port in {name} out of range ({port}): {url_str!r}")
+
+    return parsed
+
+
 def resolve_and_validate_catalog(raw_catalog: str | None) -> Path:
     """Validate catalog selection using Core parse_catalog with strict checks."""
     if not raw_catalog or not raw_catalog.strip():
@@ -175,13 +266,13 @@ class LauncherConfig:
             raise ConfigurationError(f"Invalid UI_PORT: {ui_port_str!r}. Must be an integer between 1 and 65535.")
 
         watch_val = env.get("KNOWLEDGE_WATCH_INTERVAL")
-        if watch_val is not None and watch_val.strip():
+        if watch_val is not None:
             try:
-                w = int(watch_val.strip())
+                w = float(watch_val.strip())
                 if w <= 0:
                     raise ValueError()
-            except ValueError:
-                raise ConfigurationError(f"Invalid KNOWLEDGE_WATCH_INTERVAL: {watch_val!r}. Must be a positive integer.")
+            except (ValueError, AttributeError):
+                raise ConfigurationError(f"Invalid KNOWLEDGE_WATCH_INTERVAL: {watch_val!r}. Must be a positive number.")
 
         marimo_start_str = env.get("KNOWLEDGE_MARIMO_PORT_START", "7780").strip()
         try:
@@ -233,39 +324,25 @@ class LauncherConfig:
         meili_bind_addr = None
 
         if meili_url:
-            parsed_meili = urlparse(meili_url)
-            if not parsed_meili.scheme or not parsed_meili.netloc:
-                raise ConfigurationError(f"Invalid MEILI_URL: {meili_url!r}")
-
             if manage_meili:
-                if parsed_meili.scheme.lower() != "http":
-                    raise ConfigurationError(
-                        f"KNOWLEDGE_MANAGE_MEILI requires HTTP scheme (got {parsed_meili.scheme!r} in {meili_url!r})."
-                    )
-                if parsed_meili.username or parsed_meili.password:
-                    raise ConfigurationError(
-                        f"KNOWLEDGE_MANAGE_MEILI target cannot contain authentication credentials: {meili_url!r}"
-                    )
-                if parsed_meili.path not in ("", "/"):
-                    raise ConfigurationError(
-                        f"KNOWLEDGE_MANAGE_MEILI target cannot contain a path component: {meili_url!r}"
-                    )
-                if parsed_meili.query or parsed_meili.fragment:
-                    raise ConfigurationError(
-                        f"KNOWLEDGE_MANAGE_MEILI target cannot contain query or fragment: {meili_url!r}"
-                    )
-                if not is_loopback_host(parsed_meili.hostname):
-                    raise ConfigurationError(
-                        f"Cannot manage remote Meilisearch target: {meili_url}. "
-                        "Managed native services must be local (loopback)."
-                    )
-
+                parsed_meili = validate_url(
+                    meili_url,
+                    "MEILI_URL",
+                    require_http_only=True,
+                    disallow_credentials=True,
+                    disallow_path=True,
+                    disallow_query_fragment=True,
+                )
+                check_managed_loopback_host(parsed_meili.hostname, "MEILI_URL", meili_url)
                 meili_port = parsed_meili.port if parsed_meili.port is not None else 80
-                if not (1 <= meili_port <= 65535):
-                    raise ConfigurationError(f"Invalid port in MEILI_URL: {meili_url!r}")
                 meili_bind_addr = f"{parsed_meili.hostname}:{meili_port}"
                 meili_probe_url = f"http://{meili_bind_addr}"
             else:
+                validate_url(
+                    meili_url,
+                    "MEILI_URL",
+                    allow_zero_port=True,
+                )
                 meili_probe_url = meili_url
         else:
             if manage_meili:
@@ -293,45 +370,62 @@ class LauncherConfig:
                 )
 
             if ollama_host_raw:
-                host_url = f"http://{ollama_host_raw}" if "://" not in ollama_host_raw else ollama_host_raw
-                parsed_host = urlparse(host_url)
-                if parsed_host.scheme.lower() != "http":
-                    raise ConfigurationError(
-                        f"KNOWLEDGE_MANAGE_OLLAMA requires HTTP scheme for OLLAMA_HOST (got {parsed_host.scheme!r})."
+                if "://" in ollama_host_raw:
+                    parsed_host = validate_url(
+                        ollama_host_raw,
+                        "OLLAMA_HOST",
+                        require_http_only=True,
+                        disallow_credentials=True,
+                        disallow_path=True,
+                        disallow_query_fragment=True,
                     )
-                if parsed_host.username or parsed_host.password:
-                    raise ConfigurationError("KNOWLEDGE_MANAGE_OLLAMA OLLAMA_HOST cannot contain credentials.")
-                if parsed_host.path not in ("", "/"):
-                    raise ConfigurationError("KNOWLEDGE_MANAGE_OLLAMA OLLAMA_HOST cannot contain a path component.")
-                if parsed_host.query or parsed_host.fragment:
-                    raise ConfigurationError("KNOWLEDGE_MANAGE_OLLAMA OLLAMA_HOST cannot contain query or fragment.")
-                if not is_loopback_host(parsed_host.hostname):
-                    raise ConfigurationError(
-                        f"Cannot manage remote Ollama target: {ollama_host_raw}. "
-                        "Managed native services must be local (loopback)."
-                    )
-                host_port = parsed_host.port if parsed_host.port is not None else 11434
-                if not (1 <= host_port <= 65535):
-                    raise ConfigurationError(f"Invalid port in OLLAMA_HOST: {ollama_host_raw!r}")
-                ollama_host = f"{parsed_host.hostname}:{host_port}"
+                    check_managed_loopback_host(parsed_host.hostname, "Ollama", ollama_host_raw)
+                    host_port = parsed_host.port if parsed_host.port is not None else 11434
+                    ollama_host = f"{parsed_host.hostname}:{host_port}"
+                else:
+                    if ollama_host_raw.startswith("[") or ollama_host_raw.count(":") > 1:
+                        raise ConfigurationError(
+                            f"Managed native services do not support IPv6 addresses: {ollama_host_raw!r}. "
+                            "Use IPv4 loopback (127.0.0.1) or localhost."
+                        )
+                    if ":" in ollama_host_raw:
+                        host_name, port_part = ollama_host_raw.split(":", 1)
+                        try:
+                            host_port = int(port_part)
+                            if not (1 <= host_port <= 65535):
+                                raise ValueError()
+                        except ValueError:
+                            raise ConfigurationError(f"Invalid port in OLLAMA_HOST: {ollama_host_raw!r}")
+                    else:
+                        host_name = ollama_host_raw
+                        host_port = 11434
+                    check_managed_loopback_host(host_name, "Ollama", ollama_host_raw)
+                    ollama_host = f"{host_name}:{host_port}"
             else:
                 assert ollama_embed_url is not None
-                parsed_embed = urlparse(ollama_embed_url)
-                if parsed_embed.scheme.lower() != "http":
-                    raise ConfigurationError(
-                        f"KNOWLEDGE_MANAGE_OLLAMA requires HTTP scheme for OLLAMA_EMBED_URL (got {parsed_embed.scheme!r})."
-                    )
-                if not is_loopback_host(parsed_embed.hostname):
-                    raise ConfigurationError(
-                        f"Cannot manage remote Ollama target: {ollama_embed_url}. "
-                        "Managed native services must be local (loopback)."
-                    )
-                embed_port = parsed_embed.port if parsed_embed.port is not None else 11434
+                parsed_embed = validate_url(
+                    ollama_embed_url,
+                    "OLLAMA_EMBED_URL",
+                    require_http_only=True,
+                    disallow_credentials=True,
+                    expected_path="/api/embed",
+                    disallow_query_fragment=True,
+                )
+                check_managed_loopback_host(parsed_embed.hostname, "OLLAMA_EMBED_URL", ollama_embed_url)
+                embed_port = parsed_embed.port if parsed_embed.port is not None else 80
                 ollama_host = f"{parsed_embed.hostname}:{embed_port}"
 
             # Check for contradiction between managed Ollama host and embed URL
             if ollama_embed_url:
-                parsed_embed = urlparse(ollama_embed_url)
+                parsed_embed = validate_url(
+                    ollama_embed_url,
+                    "OLLAMA_EMBED_URL",
+                    require_http_only=True,
+                    disallow_credentials=True,
+                    expected_path="/api/embed",
+                    disallow_query_fragment=True,
+                )
+                check_managed_loopback_host(parsed_embed.hostname, "OLLAMA_EMBED_URL", ollama_embed_url)
                 embed_port = parsed_embed.port if parsed_embed.port is not None else 80
                 host_name, host_port_str = ollama_host.split(":", 1)
                 if parsed_embed.hostname != host_name or embed_port != int(host_port_str):
@@ -343,9 +437,7 @@ class LauncherConfig:
             # Preserve externally managed remote embedding URL
             ollama_host = ollama_host_raw
             if ollama_embed_url:
-                parsed_embed = urlparse(ollama_embed_url)
-                if not parsed_embed.scheme or not parsed_embed.netloc:
-                    raise ConfigurationError(f"Invalid OLLAMA_EMBED_URL: {ollama_embed_url!r}")
+                validate_url(ollama_embed_url, "OLLAMA_EMBED_URL", allow_zero_port=True)
 
         # 7. Warmup endpoint & model validation
         ollama_embed_model = env.get("OLLAMA_EMBED_MODEL", "bge-m3").strip()
@@ -366,21 +458,30 @@ class LauncherConfig:
                         "set OLLAMA_WARMUP_URL, OLLAMA_EMBED_URL, or OLLAMA_HOST."
                     )
 
-            parsed_warmup = urlparse(ollama_warmup_url)
-            if not parsed_warmup.scheme or not parsed_warmup.netloc:
-                raise ConfigurationError(f"Invalid warmup endpoint URL: {ollama_warmup_url!r}")
-
             if manage_ollama:
-                assert ollama_host is not None
-                warmup_port = parsed_warmup.port if parsed_warmup.port is not None else (
-                    443 if parsed_warmup.scheme == "https" else 80
+                parsed_warmup = validate_url(
+                    ollama_warmup_url,
+                    "OLLAMA_WARMUP_URL",
+                    require_http_only=True,
+                    disallow_credentials=True,
+                    expected_path="/api/embed",
+                    disallow_query_fragment=True,
                 )
+                check_managed_loopback_host(parsed_warmup.hostname, "OLLAMA_WARMUP_URL", ollama_warmup_url)
+                warmup_port = parsed_warmup.port if parsed_warmup.port is not None else 80
                 host_name, host_port_str = ollama_host.split(":", 1)
                 if parsed_warmup.hostname != host_name or warmup_port != int(host_port_str):
                     raise ConfigurationError(
                         f"Contradictory Ollama configuration: OLLAMA_WARMUP_URL endpoint "
                         f"({parsed_warmup.hostname}:{warmup_port}) does not match managed OLLAMA_HOST ({ollama_host})."
                     )
+            else:
+                validate_url(
+                    ollama_warmup_url,
+                    "OLLAMA_WARMUP_URL",
+                    expected_path="/api/embed",
+                    allow_zero_port=True,
+                )
 
         return cls(
             catalog_path=catalog_path,
@@ -409,6 +510,81 @@ class LauncherConfig:
         )
 
 
+def is_process_group_active(pgid: int) -> bool:
+    """Check if at least one non-zombie process belongs to the process group pgid."""
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+
+    # On Linux, inspect /proc to ignore zombie processes
+    if os.path.exists("/proc"):
+        try:
+            with os.scandir("/proc") as it:
+                for entry in it:
+                    if entry.name.isdigit():
+                        try:
+                            with open(f"/proc/{entry.name}/stat", "r") as f:
+                                content = f.read()
+                            _, rest = content.rsplit(") ", 1)
+                            fields = rest.split()
+                            state = fields[0]
+                            pgrp = int(fields[2])
+                            if pgrp == pgid and state != "Z":
+                                return True
+                        except (FileNotFoundError, ProcessLookupError, PermissionError, IndexError, ValueError):
+                            continue
+            return False
+        except Exception:
+            return True
+    return True
+
+
+def terminate_process_group(
+    proc: subprocess.Popen | None = None,
+    pgid: int | None = None,
+    grace_period: float = 1.0,
+) -> None:
+    """Terminate an owned process group with a bounded grace period, then SIGKILL and reap leader."""
+    if pgid is None and proc is not None:
+        pgid = getattr(proc, "pid", None)
+    if pgid is None:
+        return
+
+    # 1. Send SIGTERM to the process group
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except (ProcessLookupError, OSError):
+        pass
+
+    # 2. Bounded grace period waiting for group processes to exit
+    deadline = time.monotonic() + grace_period
+    while time.monotonic() < deadline:
+        if not is_process_group_active(pgid):
+            break
+        time.sleep(0.05)
+
+    # 3. If group still has active members (e.g. stubborn grandchild), SIGKILL the group
+    if is_process_group_active(pgid):
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except (ProcessLookupError, OSError):
+            pass
+
+    # 4. Reap the leader process if known
+    if proc is not None:
+        try:
+            proc.wait(timeout=2.0)
+        except (subprocess.TimeoutExpired, OSError):
+            try:
+                proc.kill()
+                proc.wait(timeout=1.0)
+            except (ProcessLookupError, OSError):
+                pass
+
+
 class Launcher:
     """Orchestrates readiness checks, managed backends, warmup, and UI lifecycle."""
 
@@ -418,37 +594,9 @@ class Launcher:
         self.ui_process: subprocess.Popen | None = None
         self._cleaned_up = False
 
-    def _terminate_process_group(self, proc: subprocess.Popen, timeout: float = 5.0) -> None:
+    def _terminate_process_group(self, proc: subprocess.Popen, timeout: float = 2.0) -> None:
         """Terminate and reap the process group, even if leader has already exited."""
-        pgid = proc.pid
-        if proc.poll() is None:
-            try:
-                os.killpg(pgid, signal.SIGTERM)
-            except (ProcessLookupError, OSError):
-                try:
-                    proc.terminate()
-                except OSError:
-                    pass
-            try:
-                proc.wait(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(pgid, signal.SIGKILL)
-                except (ProcessLookupError, OSError):
-                    try:
-                        proc.kill()
-                    except OSError:
-                        pass
-                try:
-                    proc.wait(timeout=2.0)
-                except Exception:
-                    pass
-        else:
-            # Leader already exited; kill any lingering descendants in the process group
-            try:
-                os.killpg(pgid, signal.SIGTERM)
-            except (ProcessLookupError, OSError):
-                pass
+        terminate_process_group(proc, grace_period=min(timeout, 2.0))
 
     def cleanup(self) -> None:
         """Terminate UI and owned process groups. External reused services are never touched."""
@@ -527,6 +675,9 @@ class Launcher:
             time.sleep(0.5)
 
         if not ready:
+            if proc in self.owned_services:
+                self._terminate_process_group(proc)
+                self.owned_services.remove(proc)
             raise RuntimeError(
                 f"Meilisearch failed to become ready within 20s at {url}. "
                 f"Check log at {log_path}"
