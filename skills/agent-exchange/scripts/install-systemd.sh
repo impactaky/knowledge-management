@@ -6,8 +6,9 @@
 #
 # Only the resolved absolute env-file path is embedded in the units. Skill
 # directory, exchange directory, Herdr executable and session name stay in the
-# env file, so the generated units contain no machine-specific deployment
-# values and do not depend on the systemd user manager inheriting XDG variables.
+# env file and are read at service runtime, so the generated units contain no
+# machine-specific deployment values and do not depend on the systemd user
+# manager inheriting XDG variables.
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -113,11 +114,11 @@ require_value HERDR_SESSION
 # systemd unit syntax handles these paths differently:
 #   * EnvironmentFile= takes the rest of the line verbatim, so spaces are safe
 #     unquoted, but unit specifiers are expanded. A literal '%' is doubled.
-#   * ExecStart= splits on whitespace, so the executable path is quoted; unit
-#     specifiers are expanded there too and a literal '%' is doubled.
-# A literal '$' cannot be checked portably by systemd-analyze, so it is
-# rejected along with quotes, backslashes and control characters instead of
-# emitting a unit that truncates or rewrites the path.
+#   * ExecStart= uses the stable /bin/sh executable and reads
+#     AGENT_EXCHANGE_SKILL_DIR from the deployment env at service runtime, so no
+#     machine-specific skill path is embedded in the unit. A literal '$' cannot
+#     be represented safely in the environment-file path, so it is rejected.
+# The installer resolves paths itself; it never shell-evaluates env-file content.
 reject_control_characters() {
     local name="$1"
     local value="$2"
@@ -144,17 +145,6 @@ environment_file_value() {
     printf '%s\n' "${value//%/%%}"
 }
 
-skill_dir_value() {
-    local value="$1"
-    reject_control_characters AGENT_EXCHANGE_SKILL_DIR "$value"
-    case "$value" in
-        *'"'* | *\\* | *'$'*)
-            die "AGENT_EXCHANGE_SKILL_DIR cannot be represented safely in ExecStart=: $value"
-            ;;
-    esac
-    printf '%s\n' "${value//%/%%}"
-}
-
 if [[ -z "$target_dir" ]]; then
     if [[ -n "${XDG_CONFIG_HOME:-}" ]]; then
         target_dir="$XDG_CONFIG_HOME/systemd/user"
@@ -169,15 +159,11 @@ escape_replacement() {
 
 env_value="$(environment_file_value "$env_file")" || exit 1
 env_replacement="$(escape_replacement "$env_value")"
-skill_value="$(skill_dir_value "$AGENT_EXCHANGE_SKILL_DIR")" || exit 1
-skill_replacement="$(escape_replacement "$skill_value")"
 
 render_template() {
     local template="$1"
     [[ -f "$template" ]] || die "missing template: $template"
-    sed -e "s|@ENVIRONMENT_FILE@|$env_replacement|g" \
-        -e "s|@SKILL_DIR@|$skill_replacement|g" \
-        "$template"
+    sed -e "s|@ENVIRONMENT_FILE@|$env_replacement|g" "$template"
 }
 
 units=(agent-exchange-launcher.service herdr-agent-exchange.service)

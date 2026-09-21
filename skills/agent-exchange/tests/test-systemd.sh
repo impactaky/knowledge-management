@@ -28,12 +28,22 @@ assert_absent() {
     fi
 }
 
+# The units keep the skill directory out of ExecStart and read it from the
+# deployment env at service runtime through the stable /bin/sh executable.
+launcher_exec='ExecStart=/bin/sh -c '"'"'exec "$${AGENT_EXCHANGE_SKILL_DIR:?AGENT_EXCHANGE_SKILL_DIR must be set}/scripts/launcher.sh"'"'"''
+herdr_exec='ExecStart=/bin/sh -c '"'"'exec "$${AGENT_EXCHANGE_SKILL_DIR:?AGENT_EXCHANGE_SKILL_DIR must be set}/scripts/herdr-server.sh"'"'"''
+
+write_scripts() {
+    local directory="$1"
+    mkdir -p "$directory/scripts"
+    for script in launcher.sh herdr-server.sh; do
+        printf '#!/bin/sh\nexit 0\n' >"$directory/scripts/$script"
+        chmod +x "$directory/scripts/$script"
+    done
+}
+
 skill_dir="$test_root/skill dir"
-mkdir -p "$skill_dir/scripts"
-for script in launcher.sh herdr-server.sh; do
-    printf '#!/bin/sh\nexit 0\n' >"$skill_dir/scripts/$script"
-    chmod +x "$skill_dir/scripts/$script"
-done
+write_scripts "$skill_dir"
 herdr_bin="$test_root/herdr"
 printf '#!/bin/sh\nexit 0\n' >"$herdr_bin"
 chmod +x "$herdr_bin"
@@ -56,14 +66,15 @@ write_env "$xdg_env"
 
 # The XDG env file is resolved to an absolute EnvironmentFile at install time.
 # EnvironmentFile= is emitted unquoted (systemd keeps the rest of the line
-# verbatim, so spaces survive), while ExecStart= is quoted as one word.
+# verbatim, so spaces survive), and ExecStart= never embeds the skill path.
 AGENT_EXCHANGE_ENV_FILE='' XDG_CONFIG_HOME="$xdg_home" HOME="$test_root/homedir" \
     bash "$INSTALLER" --dry-run >"$test_root/dry-run.txt" 2>"$test_root/err"
 assert_contains "$test_root/dry-run.txt" "EnvironmentFile=$(realpath -e -- "$xdg_env")"
 assert_absent "$test_root/dry-run.txt" "EnvironmentFile=\""
-assert_contains "$test_root/dry-run.txt" "ExecStart=\"$skill_dir/scripts/launcher.sh\""
-assert_contains "$test_root/dry-run.txt" "ExecStart=\"$skill_dir/scripts/herdr-server.sh\""
+assert_contains "$test_root/dry-run.txt" "$launcher_exec"
+assert_contains "$test_root/dry-run.txt" "$herdr_exec"
 # Deployment values stay in the env file, not in the unit.
+assert_absent "$test_root/dry-run.txt" "$skill_dir"
 assert_absent "$test_root/dry-run.txt" "$exchange_root"
 assert_absent "$test_root/dry-run.txt" "$herdr_bin"
 assert_absent "$test_root/dry-run.txt" '@'
@@ -101,46 +112,33 @@ if AGENT_EXCHANGE_ENV_FILE="$relative_env" bash "$INSTALLER" --dry-run >/dev/nul
     fail 'relative AGENT_EXCHANGE_ROOT was accepted'
 fi
 
-# Writing units embeds the resolved absolute EnvironmentFile unquoted.
+# Writing units embeds the resolved absolute EnvironmentFile unquoted and no
+# machine-specific skill path.
 target="$test_root/units"
 AGENT_EXCHANGE_ENV_FILE='' XDG_CONFIG_HOME="$xdg_home" HOME="$test_root/homedir" \
     bash "$INSTALLER" --target-dir "$target" >"$test_root/write.txt" 2>"$test_root/err"
 assert_contains "$target/agent-exchange-launcher.service" "EnvironmentFile=$(realpath -e -- "$xdg_env")"
 assert_contains "$target/herdr-agent-exchange.service" "EnvironmentFile=$(realpath -e -- "$xdg_env")"
-assert_contains "$target/agent-exchange-launcher.service" "ExecStart=\"$skill_dir/scripts/launcher.sh\""
+assert_contains "$target/agent-exchange-launcher.service" "$launcher_exec"
+assert_contains "$target/herdr-agent-exchange.service" "$herdr_exec"
+assert_absent "$target/agent-exchange-launcher.service" "$skill_dir"
+assert_absent "$target/herdr-agent-exchange.service" "$skill_dir"
 assert_absent "$target/agent-exchange-launcher.service" '@'
 assert_absent "$target/herdr-agent-exchange.service" '@'
 
-# A literal '%' is doubled so systemd does not treat it as a specifier, and
-# spaces stay part of the EnvironmentFile path.
+# A literal '%' is doubled in the EnvironmentFile path so systemd does not
+# treat it as a specifier, and spaces stay part of the path.
 percent_dir="$test_root/env %dir"
 percent_env="$percent_dir/agent.env"
 write_env "$percent_env"
 percent_target="$test_root/percent-units"
 AGENT_EXCHANGE_ENV_FILE="$percent_env" bash "$INSTALLER" --target-dir "$percent_target" >/dev/null 2>"$test_root/err"
 assert_contains "$percent_target/agent-exchange-launcher.service" "EnvironmentFile=${percent_env//%/%%}"
-if command -v systemd-analyze >/dev/null 2>&1; then
-    if ! systemd-analyze verify --man=no \
-        "$percent_target/agent-exchange-launcher.service" \
-        "$percent_target/herdr-agent-exchange.service" \
-        >"$test_root/percent-verify.txt" 2>&1; then
-        cat "$test_root/percent-verify.txt" >&2
-        fail 'systemd-analyze verify rejected the percent-escaped unit'
-    fi
-    if grep -E 'Failed to resolve unit specifiers' "$test_root/percent-verify.txt" >/dev/null; then
-        cat "$test_root/percent-verify.txt" >&2
-        fail 'percent escaping produced a specifier error'
-    fi
-fi
 
-# ExecStart= is quoted and doubles '%' so it survives systemd specifier
-# expansion while spaces stay in one word.
-special_skill="$test_root/skill pct% dir"
-mkdir -p "$special_skill/scripts"
-for script in launcher.sh herdr-server.sh; do
-    printf '#!/bin/sh\nexit 0\n' >"$special_skill/scripts/$script"
-    chmod +x "$special_skill/scripts/$script"
-done
+# A skill directory containing spaces, '$' and '%' is safe because it is never
+# embedded; it is read from the env at service runtime.
+special_skill="$test_root/skill \$pct% dir"
+write_scripts "$special_skill"
 special_env="$test_root/special.env"
 {
     printf 'AGENT_EXCHANGE_SKILL_DIR=%s\n' "$special_skill"
@@ -150,47 +148,27 @@ special_env="$test_root/special.env"
 } >"$special_env"
 special_target="$test_root/special-units"
 AGENT_EXCHANGE_ENV_FILE="$special_env" bash "$INSTALLER" --target-dir "$special_target" >/dev/null 2>"$test_root/err"
-expected_skill="${special_skill//%/%%}"
-assert_contains "$special_target/agent-exchange-launcher.service" "ExecStart=\"$expected_skill/scripts/launcher.sh\""
-if command -v systemd-analyze >/dev/null 2>&1; then
-    if ! systemd-analyze verify --man=no \
-        "$special_target/agent-exchange-launcher.service" \
-        "$special_target/herdr-agent-exchange.service" >"$test_root/special-verify.txt" 2>&1; then
-        cat "$test_root/special-verify.txt" >&2
-        fail 'systemd-analyze verify rejected the escaped ExecStart unit'
-    fi
-fi
+assert_contains "$special_target/agent-exchange-launcher.service" "$launcher_exec"
+assert_absent "$special_target/agent-exchange-launcher.service" "$special_skill"
 
-# systemd-analyze (when present) must accept the generated units: no ExecStart
-# truncation at a space, no EnvironmentFile quote or specifier warnings.
+# systemd-analyze (when present) must accept every generated unit: no ExecStart
+# truncation at a space, no EnvironmentFile quote or specifier warnings, no
+# missing skill path.
 if command -v systemd-analyze >/dev/null 2>&1; then
-    if ! systemd-analyze verify --man=no \
-        "$target/agent-exchange-launcher.service" \
-        "$target/herdr-agent-exchange.service" >"$test_root/verify.txt" 2>&1; then
-        cat "$test_root/verify.txt" >&2
-        fail 'systemd-analyze verify rejected the generated units'
-    fi
-    if grep -E 'path is not absolute|Failed to resolve unit specifiers|Unknown escape|is not executable' \
-        "$test_root/verify.txt" >/dev/null; then
-        cat "$test_root/verify.txt" >&2
-        fail 'systemd-analyze verify reported a path problem'
-    fi
+    for units in "$target" "$percent_target" "$special_target"; do
+        if ! systemd-analyze verify --man=no \
+            "$units/agent-exchange-launcher.service" \
+            "$units/herdr-agent-exchange.service" >"$test_root/verify.txt" 2>&1; then
+            cat "$test_root/verify.txt" >&2
+            fail "systemd-analyze verify rejected units in $units"
+        fi
+        if grep -E 'path is not absolute|Failed to resolve unit specifiers|Unknown escape|is not executable' \
+            "$test_root/verify.txt" >/dev/null; then
+            cat "$test_root/verify.txt" >&2
+            fail "systemd-analyze verify reported a path problem in $units"
+        fi
+    done
 fi
-
-# Paths with characters the generator cannot represent safely are refused.
-for bad_value in 'bad"quote' 'bad\backslash' 'bad$variable'; do
-    mkdir -p -- "$test_root/$bad_value/scripts"
-    bad_env="$test_root/unrepresentable.env"
-    {
-        printf 'AGENT_EXCHANGE_SKILL_DIR=%s\n' "$test_root/$bad_value"
-        printf 'AGENT_EXCHANGE_ROOT=%s\n' "$exchange_root"
-        printf 'HERDR_BIN=%s\n' "$herdr_bin"
-        printf 'HERDR_SESSION=agent-exchange\n'
-    } >"$bad_env"
-    if AGENT_EXCHANGE_ENV_FILE="$bad_env" bash "$INSTALLER" --dry-run >/dev/null 2>&1; then
-        fail "unrepresentable skill dir was accepted: $bad_value"
-    fi
-done
 
 # A '$' in the deployment env path cannot be represented safely in
 # EnvironmentFile= and is refused.

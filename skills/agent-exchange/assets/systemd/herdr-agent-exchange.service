@@ -4,7 +4,7 @@ Description=Herdr server for Agent Exchange responders
 [Service]
 Type=simple
 EnvironmentFile=@ENVIRONMENT_FILE@
-ExecStart="@SKILL_DIR@/scripts/herdr-server.sh"
+ExecStart=/bin/sh -c 'exec "$${AGENT_EXCHANGE_SKILL_DIR:?AGENT_EXCHANGE_SKILL_DIR must be set}/scripts/herdr-server.sh"'
 Restart=on-failure
 RestartSec=3
 

@@ -420,7 +420,7 @@ process_continuation() {
     local running_dir="$2"
     local thread_id="$3"
     local reservation thread_path active repository initial ready
-    local binding worktree_path worktree_real workspace agent common_repository common_real
+    local binding worktree_path worktree_real workspace agent common_real
     local repository_root primary_worktree_line
     local workspace_json workspace_id workspace_path workspace_repo workspace_linked
     local agent_json agent_name agent_workspace agent_cwd agent_ready
@@ -467,7 +467,7 @@ process_continuation() {
     worktree_path="$(agent_exchange_read_line "$binding/worktree" 2>/dev/null || true)"
     workspace="$(agent_exchange_read_line "$binding/workspace" 2>/dev/null || true)"
     agent="$(agent_exchange_read_line "$binding/agent" 2>/dev/null || true)"
-    common_repository="$(agent_exchange_read_line "$binding/common-repository" 2>/dev/null || true)"
+    local common_repository="$(agent_exchange_read_line "$binding/common-repository" 2>/dev/null || true)"
     if [[ "$worktree_path" != /* || -z "$workspace" || -z "$agent" || "$common_repository" != /* ]]; then
         thread_failure_response "$id" thread-binding-invalid "$thread_id" 'resource binding contains malformed or multiline metadata'
         return
