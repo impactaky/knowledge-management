@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import importlib.util
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -20,6 +21,12 @@ from urllib.request import Request, urlopen
 
 UI_DIR = Path(__file__).resolve().parent
 REPO_DIR = Path(__file__).resolve().parents[3]
+CORE_DIR = Path(__file__).resolve().parents[2] / "integrations" / "federation-core"
+
+if str(CORE_DIR) not in sys.path:
+    sys.path.insert(0, str(CORE_DIR))
+
+from federation_core.core import parse_catalog, resolve_catalog_path
 
 
 class ConfigurationError(Exception):
@@ -42,15 +49,44 @@ def parse_bool(name: str, val: str | None, default: bool = False) -> bool:
 
 
 def is_loopback_host(host: str | None) -> bool:
-    """Check if the given host address is a local loopback interface."""
+    """Check if the given host is a loopback address using ipaddress and localhost check."""
     if not host:
         return False
     h = host.strip().lower()
-    if h in ("127.0.0.1", "localhost", "::1", "0.0.0.0"):
+    if h.startswith("[") and h.endswith("]"):
+        h = h[1:-1]
+    if h == "localhost":
         return True
-    if h.startswith("127."):
-        return True
-    return False
+    try:
+        ip = ipaddress.ip_address(h)
+        return ip.is_loopback
+    except ValueError:
+        return False
+
+
+def resolve_and_validate_catalog(raw_catalog: str | None) -> Path:
+    """Validate catalog selection using Core parse_catalog with strict checks."""
+    if not raw_catalog or not raw_catalog.strip():
+        raise ConfigurationError(
+            "Missing catalog configuration: neither FEDERATION_CATALOG nor "
+            "KNOWLEDGE_CATALOG is set. Set FEDERATION_CATALOG to the path of CATALOG.md."
+        )
+    try:
+        catalog_path = resolve_catalog_path(raw_catalog.strip())
+    except Exception as exc:
+        raise ConfigurationError(f"Invalid catalog configuration: {exc}")
+
+    if not catalog_path.exists() or not catalog_path.is_file():
+        raise ConfigurationError(
+            f"Configured catalog path does not exist or is not a file: {catalog_path}"
+        )
+
+    try:
+        parse_catalog(catalog_path, strict=True)
+    except Exception as exc:
+        raise ConfigurationError(f"Catalog validation failed: {exc}")
+
+    return catalog_path
 
 
 def is_meili_healthy(url: str, api_key: str | None = None, timeout: float = 1.0) -> bool:
@@ -92,13 +128,15 @@ class LauncherConfig:
     marimo_host: str
     manage_meili: bool
     meili_url: str | None
+    meili_probe_url: str | None
+    meili_bind_addr: str | None
     meili_bin: str
     meili_db_path: Path | None
     meili_api_key: str | None
     meili_master_key: str | None
     manage_ollama: bool
     ollama_bin: str
-    ollama_host: str
+    ollama_host: str | None
     ollama_embed_url: str | None
     ollama_models: str | None
     warmup_embedding: bool
@@ -107,25 +145,13 @@ class LauncherConfig:
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> LauncherConfig:
+        """Pure configuration validation before any mutation, directory creation or subprocess spawn."""
         if env is None:
             env = dict(os.environ)
 
-        # 1. Catalog validation (FEDERATION_CATALOG takes precedence over KNOWLEDGE_CATALOG)
+        # 1. Catalog validation (pure, no directory creation)
         raw_catalog = env.get("FEDERATION_CATALOG") or env.get("KNOWLEDGE_CATALOG")
-        if not raw_catalog or not raw_catalog.strip():
-            raise ConfigurationError(
-                "Missing catalog configuration: neither FEDERATION_CATALOG nor "
-                "KNOWLEDGE_CATALOG is set. Set FEDERATION_CATALOG to the path of CATALOG.md."
-            )
-        catalog_path = Path(raw_catalog.strip()).expanduser().resolve()
-        if not catalog_path.exists() or not catalog_path.is_file():
-            raise ConfigurationError(
-                f"Configured catalog path does not exist or is not a file: {catalog_path}"
-            )
-        try:
-            catalog_path.read_bytes()
-        except OSError as exc:
-            raise ConfigurationError(f"Cannot read configured catalog at {catalog_path}: {exc}")
+        catalog_path = resolve_and_validate_catalog(raw_catalog)
 
         # 2. Boolean switches
         manage_meili = parse_bool("KNOWLEDGE_MANAGE_MEILI", env.get("KNOWLEDGE_MANAGE_MEILI"), False)
@@ -134,8 +160,12 @@ class LauncherConfig:
         auto_index = parse_bool("KNOWLEDGE_AUTO_INDEX", env.get("KNOWLEDGE_AUTO_INDEX"), False)
         enable_live_marimo = parse_bool("KNOWLEDGE_ENABLE_LIVE_MARIMO", env.get("KNOWLEDGE_ENABLE_LIVE_MARIMO"), False)
 
-        # 3. UI binding & data directory
-        ui_host = env.get("UI_HOST", "127.0.0.1").strip()
+        # 3. UI binding & server numeric configuration
+        ui_host_raw = env.get("UI_HOST", "127.0.0.1")
+        if not ui_host_raw or not ui_host_raw.strip():
+            raise ConfigurationError("UI_HOST must be a non-empty string.")
+        ui_host = ui_host_raw.strip()
+
         ui_port_str = env.get("UI_PORT", "7776").strip()
         try:
             ui_port = int(ui_port_str)
@@ -144,17 +174,49 @@ class LauncherConfig:
         except ValueError:
             raise ConfigurationError(f"Invalid UI_PORT: {ui_port_str!r}. Must be an integer between 1 and 65535.")
 
-        data_dir_raw = env.get("KNOWLEDGE_DATA_DIR")
-        if data_dir_raw:
-            data_dir = Path(data_dir_raw).expanduser().resolve()
-        else:
-            data_dir = (REPO_DIR / ".data").resolve()
-        try:
-            data_dir.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            raise ConfigurationError(f"Failed to create runtime data directory {data_dir}: {exc}")
+        watch_val = env.get("KNOWLEDGE_WATCH_INTERVAL")
+        if watch_val is not None and watch_val.strip():
+            try:
+                w = int(watch_val.strip())
+                if w <= 0:
+                    raise ValueError()
+            except ValueError:
+                raise ConfigurationError(f"Invalid KNOWLEDGE_WATCH_INTERVAL: {watch_val!r}. Must be a positive integer.")
 
-        # 4. Live marimo
+        marimo_start_str = env.get("KNOWLEDGE_MARIMO_PORT_START", "7780").strip()
+        try:
+            marimo_start = int(marimo_start_str)
+            if not (1 <= marimo_start <= 65535):
+                raise ValueError()
+        except ValueError:
+            raise ConfigurationError(f"Invalid KNOWLEDGE_MARIMO_PORT_START: {marimo_start_str!r}.")
+
+        marimo_end_str = env.get("KNOWLEDGE_MARIMO_PORT_END", "7879").strip()
+        try:
+            marimo_end = int(marimo_end_str)
+            if not (1 <= marimo_end <= 65535):
+                raise ValueError()
+        except ValueError:
+            raise ConfigurationError(f"Invalid KNOWLEDGE_MARIMO_PORT_END: {marimo_end_str!r}.")
+
+        if marimo_start > marimo_end:
+            raise ConfigurationError(
+                f"KNOWLEDGE_MARIMO_PORT_START ({marimo_start}) must be <= KNOWLEDGE_MARIMO_PORT_END ({marimo_end})."
+            )
+
+        marimo_idle_str = env.get("KNOWLEDGE_MARIMO_IDLE_SECONDS", "3600").strip()
+        try:
+            marimo_idle = int(marimo_idle_str)
+            if marimo_idle <= 0:
+                raise ValueError()
+        except ValueError:
+            raise ConfigurationError(f"Invalid KNOWLEDGE_MARIMO_IDLE_SECONDS: {marimo_idle_str!r}. Must be a positive integer.")
+
+        # Data directory path resolution without mkdir
+        data_dir_raw = env.get("KNOWLEDGE_DATA_DIR")
+        data_dir = Path(data_dir_raw).expanduser().resolve() if data_dir_raw else (REPO_DIR / ".data").resolve()
+
+        # 4. Live marimo dependency check
         marimo_host = env.get("KNOWLEDGE_MARIMO_HOST") or ui_host
         if enable_live_marimo:
             if importlib.util.find_spec("marimo") is None:
@@ -164,18 +226,52 @@ class LauncherConfig:
                     "Install with 'uv sync --locked --extra notebook'."
                 )
 
-        # 5. Meilisearch configuration
-        meili_url = env.get("MEILI_URL")
+        # 5. Meilisearch configuration & loopback validation
+        meili_url_raw = env.get("MEILI_URL")
+        meili_url = meili_url_raw.strip() if meili_url_raw else None
+        meili_probe_url = None
+        meili_bind_addr = None
+
         if meili_url:
-            meili_url = meili_url.strip()
             parsed_meili = urlparse(meili_url)
             if not parsed_meili.scheme or not parsed_meili.netloc:
                 raise ConfigurationError(f"Invalid MEILI_URL: {meili_url!r}")
-        else:
-            meili_url = None
 
-        if auto_index and not meili_url:
-            raise ConfigurationError("KNOWLEDGE_AUTO_INDEX requires MEILI_URL to be set.")
+            if manage_meili:
+                if parsed_meili.scheme.lower() != "http":
+                    raise ConfigurationError(
+                        f"KNOWLEDGE_MANAGE_MEILI requires HTTP scheme (got {parsed_meili.scheme!r} in {meili_url!r})."
+                    )
+                if parsed_meili.username or parsed_meili.password:
+                    raise ConfigurationError(
+                        f"KNOWLEDGE_MANAGE_MEILI target cannot contain authentication credentials: {meili_url!r}"
+                    )
+                if parsed_meili.path not in ("", "/"):
+                    raise ConfigurationError(
+                        f"KNOWLEDGE_MANAGE_MEILI target cannot contain a path component: {meili_url!r}"
+                    )
+                if parsed_meili.query or parsed_meili.fragment:
+                    raise ConfigurationError(
+                        f"KNOWLEDGE_MANAGE_MEILI target cannot contain query or fragment: {meili_url!r}"
+                    )
+                if not is_loopback_host(parsed_meili.hostname):
+                    raise ConfigurationError(
+                        f"Cannot manage remote Meilisearch target: {meili_url}. "
+                        "Managed native services must be local (loopback)."
+                    )
+
+                meili_port = parsed_meili.port if parsed_meili.port is not None else 80
+                if not (1 <= meili_port <= 65535):
+                    raise ConfigurationError(f"Invalid port in MEILI_URL: {meili_url!r}")
+                meili_bind_addr = f"{parsed_meili.hostname}:{meili_port}"
+                meili_probe_url = f"http://{meili_bind_addr}"
+            else:
+                meili_probe_url = meili_url
+        else:
+            if manage_meili:
+                raise ConfigurationError("KNOWLEDGE_MANAGE_MEILI requires MEILI_URL to be explicitly configured.")
+            if auto_index:
+                raise ConfigurationError("KNOWLEDGE_AUTO_INDEX requires MEILI_URL to be set.")
 
         meili_bin = env.get("MEILI_BIN", "meilisearch").strip()
         meili_db_raw = env.get("MEILI_DB_PATH")
@@ -183,51 +279,108 @@ class LauncherConfig:
         meili_api_key = env.get("MEILI_API_KEY")
         meili_master_key = env.get("MEILI_MASTER_KEY")
 
-        if manage_meili:
-            if not meili_url:
-                raise ConfigurationError("KNOWLEDGE_MANAGE_MEILI requires MEILI_URL to be explicitly configured.")
-            parsed_meili = urlparse(meili_url)
-            if not is_loopback_host(parsed_meili.hostname):
-                raise ConfigurationError(
-                    f"Cannot manage remote Meilisearch target: {meili_url}. "
-                    "Managed native services must be local (loopback)."
-                )
-
-        # 6. Ollama configuration
+        # 6. Ollama configuration & loopback validation
         ollama_bin = env.get("OLLAMA_BIN", "ollama").strip()
-        ollama_host = env.get("OLLAMA_HOST", "").strip()
+        ollama_host_raw = env.get("OLLAMA_HOST", "").strip() or None
         ollama_embed_url = env.get("OLLAMA_EMBED_URL", "").strip() or None
         ollama_models = env.get("OLLAMA_MODELS", "").strip() or None
+        ollama_host = None
 
-        if not ollama_host:
-            if ollama_embed_url:
-                parsed_embed = urlparse(ollama_embed_url)
-                ollama_host = f"{parsed_embed.hostname}:{parsed_embed.port or 11434}"
-            else:
-                ollama_host = "127.0.0.1:11434"
-
-        host_part = ollama_host.split(":")[0]
         if manage_ollama:
-            if not is_loopback_host(host_part):
+            if not ollama_host_raw and not ollama_embed_url:
                 raise ConfigurationError(
-                    f"Cannot manage remote Ollama target: {ollama_host}. "
-                    "Managed native services must be local (loopback)."
+                    "KNOWLEDGE_MANAGE_OLLAMA requires OLLAMA_HOST or OLLAMA_EMBED_URL to be configured."
                 )
-            if ollama_embed_url:
-                parsed_embed = urlparse(ollama_embed_url)
-                if not is_loopback_host(parsed_embed.hostname):
+
+            if ollama_host_raw:
+                host_url = f"http://{ollama_host_raw}" if "://" not in ollama_host_raw else ollama_host_raw
+                parsed_host = urlparse(host_url)
+                if parsed_host.scheme.lower() != "http":
                     raise ConfigurationError(
-                        f"Cannot manage remote Ollama embedding target: {ollama_embed_url}. "
+                        f"KNOWLEDGE_MANAGE_OLLAMA requires HTTP scheme for OLLAMA_HOST (got {parsed_host.scheme!r})."
+                    )
+                if parsed_host.username or parsed_host.password:
+                    raise ConfigurationError("KNOWLEDGE_MANAGE_OLLAMA OLLAMA_HOST cannot contain credentials.")
+                if parsed_host.path not in ("", "/"):
+                    raise ConfigurationError("KNOWLEDGE_MANAGE_OLLAMA OLLAMA_HOST cannot contain a path component.")
+                if parsed_host.query or parsed_host.fragment:
+                    raise ConfigurationError("KNOWLEDGE_MANAGE_OLLAMA OLLAMA_HOST cannot contain query or fragment.")
+                if not is_loopback_host(parsed_host.hostname):
+                    raise ConfigurationError(
+                        f"Cannot manage remote Ollama target: {ollama_host_raw}. "
                         "Managed native services must be local (loopback)."
                     )
+                host_port = parsed_host.port if parsed_host.port is not None else 11434
+                if not (1 <= host_port <= 65535):
+                    raise ConfigurationError(f"Invalid port in OLLAMA_HOST: {ollama_host_raw!r}")
+                ollama_host = f"{parsed_host.hostname}:{host_port}"
+            else:
+                assert ollama_embed_url is not None
+                parsed_embed = urlparse(ollama_embed_url)
+                if parsed_embed.scheme.lower() != "http":
+                    raise ConfigurationError(
+                        f"KNOWLEDGE_MANAGE_OLLAMA requires HTTP scheme for OLLAMA_EMBED_URL (got {parsed_embed.scheme!r})."
+                    )
+                if not is_loopback_host(parsed_embed.hostname):
+                    raise ConfigurationError(
+                        f"Cannot manage remote Ollama target: {ollama_embed_url}. "
+                        "Managed native services must be local (loopback)."
+                    )
+                embed_port = parsed_embed.port if parsed_embed.port is not None else 11434
+                ollama_host = f"{parsed_embed.hostname}:{embed_port}"
 
-        # 7. Warmup configuration
+            # Check for contradiction between managed Ollama host and embed URL
+            if ollama_embed_url:
+                parsed_embed = urlparse(ollama_embed_url)
+                embed_port = parsed_embed.port if parsed_embed.port is not None else 80
+                host_name, host_port_str = ollama_host.split(":", 1)
+                if parsed_embed.hostname != host_name or embed_port != int(host_port_str):
+                    raise ConfigurationError(
+                        f"Contradictory Ollama configuration: OLLAMA_EMBED_URL endpoint "
+                        f"({parsed_embed.hostname}:{embed_port}) does not match managed OLLAMA_HOST ({ollama_host})."
+                    )
+        else:
+            # Preserve externally managed remote embedding URL
+            ollama_host = ollama_host_raw
+            if ollama_embed_url:
+                parsed_embed = urlparse(ollama_embed_url)
+                if not parsed_embed.scheme or not parsed_embed.netloc:
+                    raise ConfigurationError(f"Invalid OLLAMA_EMBED_URL: {ollama_embed_url!r}")
+
+        # 7. Warmup endpoint & model validation
         ollama_embed_model = env.get("OLLAMA_EMBED_MODEL", "bge-m3").strip()
         ollama_warmup_url = env.get("OLLAMA_WARMUP_URL", "").strip() or None
-        if not ollama_warmup_url and ollama_embed_url:
-            ollama_warmup_url = ollama_embed_url
-        elif not ollama_warmup_url:
-            ollama_warmup_url = f"http://{ollama_host}/api/embed"
+
+        if warmup_embedding:
+            if not ollama_embed_model:
+                raise ConfigurationError("OLLAMA_EMBED_MODEL cannot be empty when KNOWLEDGE_WARMUP_EMBEDDING is enabled.")
+
+            if not ollama_warmup_url:
+                if ollama_embed_url:
+                    ollama_warmup_url = ollama_embed_url
+                elif ollama_host:
+                    ollama_warmup_url = f"http://{ollama_host}/api/embed"
+                else:
+                    raise ConfigurationError(
+                        "KNOWLEDGE_WARMUP_EMBEDDING requires an explicit endpoint: "
+                        "set OLLAMA_WARMUP_URL, OLLAMA_EMBED_URL, or OLLAMA_HOST."
+                    )
+
+            parsed_warmup = urlparse(ollama_warmup_url)
+            if not parsed_warmup.scheme or not parsed_warmup.netloc:
+                raise ConfigurationError(f"Invalid warmup endpoint URL: {ollama_warmup_url!r}")
+
+            if manage_ollama:
+                assert ollama_host is not None
+                warmup_port = parsed_warmup.port if parsed_warmup.port is not None else (
+                    443 if parsed_warmup.scheme == "https" else 80
+                )
+                host_name, host_port_str = ollama_host.split(":", 1)
+                if parsed_warmup.hostname != host_name or warmup_port != int(host_port_str):
+                    raise ConfigurationError(
+                        f"Contradictory Ollama configuration: OLLAMA_WARMUP_URL endpoint "
+                        f"({parsed_warmup.hostname}:{warmup_port}) does not match managed OLLAMA_HOST ({ollama_host})."
+                    )
 
         return cls(
             catalog_path=catalog_path,
@@ -239,6 +392,8 @@ class LauncherConfig:
             marimo_host=marimo_host,
             manage_meili=manage_meili,
             meili_url=meili_url,
+            meili_probe_url=meili_probe_url,
+            meili_bind_addr=meili_bind_addr,
             meili_bin=meili_bin,
             meili_db_path=meili_db_path,
             meili_api_key=meili_api_key,
@@ -263,37 +418,54 @@ class Launcher:
         self.ui_process: subprocess.Popen | None = None
         self._cleaned_up = False
 
-    def _terminate_process(self, proc: subprocess.Popen, timeout: float = 5.0) -> None:
-        if proc.poll() is not None:
-            return
-        try:
-            proc.terminate()
-            proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+    def _terminate_process_group(self, proc: subprocess.Popen, timeout: float = 5.0) -> None:
+        """Terminate and reap the process group, even if leader has already exited."""
+        pgid = proc.pid
+        if proc.poll() is None:
             try:
-                proc.wait(timeout=2.0)
-            except Exception:
+                os.killpg(pgid, signal.SIGTERM)
+            except (ProcessLookupError, OSError):
+                try:
+                    proc.terminate()
+                except OSError:
+                    pass
+            try:
+                proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(pgid, signal.SIGKILL)
+                except (ProcessLookupError, OSError):
+                    try:
+                        proc.kill()
+                    except OSError:
+                        pass
+                try:
+                    proc.wait(timeout=2.0)
+                except Exception:
+                    pass
+        else:
+            # Leader already exited; kill any lingering descendants in the process group
+            try:
+                os.killpg(pgid, signal.SIGTERM)
+            except (ProcessLookupError, OSError):
                 pass
-        except Exception:
-            pass
 
     def cleanup(self) -> None:
-        """Terminate UI and owned services. Never terminates external reused processes."""
+        """Terminate UI and owned process groups. External reused services are never touched."""
         if self._cleaned_up:
             return
         self._cleaned_up = True
 
         if self.ui_process is not None:
-            self._terminate_process(self.ui_process)
+            self._terminate_process_group(self.ui_process)
             self.ui_process = None
 
         for proc in reversed(self.owned_services):
-            self._terminate_process(proc)
+            self._terminate_process_group(proc)
         self.owned_services.clear()
 
     def start_meili(self) -> None:
-        url = self.config.meili_url
+        url = self.config.meili_probe_url
         assert url is not None
         if is_meili_healthy(url, self.config.meili_api_key):
             parsed = urlparse(url)
@@ -311,11 +483,8 @@ class Launcher:
         assert self.config.meili_db_path is not None
         self.config.meili_db_path.mkdir(parents=True, exist_ok=True)
         log_path = self.config.data_dir / "meilisearch.log"
-        log_file = log_path.open("ab")
 
-        parsed = urlparse(url)
-        addr = f"{parsed.hostname}:{parsed.port or 7700}"
-
+        addr = self.config.meili_bind_addr
         cmd = [
             bin_path,
             "--db-path", str(self.config.meili_db_path),
@@ -323,17 +492,25 @@ class Launcher:
             "--no-analytics",
             "--experimental-allowed-ip-networks", "127.0.0.1/32",
         ]
+
+        meili_env = os.environ.copy()
         if self.config.meili_master_key:
-            cmd.extend(["--master-key", self.config.meili_master_key])
+            meili_env["MEILI_MASTER_KEY"] = self.config.meili_master_key
 
         print(f"Starting Meilisearch at {addr}...")
-        proc = subprocess.Popen(
-            cmd,
-            stdout=log_file,
-            stderr=subprocess.STDOUT,
-        )
-        log_file.close()
-        self.owned_services.append(proc)
+        log_file = log_path.open("ab")
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                env=meili_env,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            self.owned_services.append(proc)
+        finally:
+            log_file.close()
+
         print(f"Meilisearch PID: {proc.pid}")
 
         deadline = time.monotonic() + 20.0
@@ -358,6 +535,7 @@ class Launcher:
 
     def start_ollama(self) -> bool:
         host = self.config.ollama_host
+        assert host is not None
         if is_ollama_healthy(host):
             print(f"Ollama already running at {host}")
             return True
@@ -372,30 +550,41 @@ class Launcher:
             return False
 
         log_path = self.config.data_dir / "ollama.log"
-        log_file = log_path.open("ab")
 
-        env = dict(os.environ)
+        env = os.environ.copy()
         env["OLLAMA_HOST"] = host
         if self.config.ollama_models:
             env["OLLAMA_MODELS"] = self.config.ollama_models
 
         print(f"Starting Ollama at {host}...")
-        proc = subprocess.Popen(
-            [bin_path, "serve"],
-            env=env,
-            stdout=log_file,
-            stderr=subprocess.STDOUT,
-        )
-        log_file.close()
-        self.owned_services.append(proc)
+        log_file = log_path.open("ab")
+        try:
+            proc = subprocess.Popen(
+                [bin_path, "serve"],
+                env=env,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            self.owned_services.append(proc)
+        except OSError as exc:
+            print(f"Warning: Failed to start Ollama ({exc}) — hybrid search unavailable", file=sys.stderr)
+            return False
+        finally:
+            log_file.close()
+
         print(f"Ollama PID: {proc.pid}")
 
         deadline = time.monotonic() + 20.0
         ready = False
         while time.monotonic() < deadline:
             if proc.poll() is not None:
-                print(f"Warning: Ollama process exited prematurely with code {proc.returncode} — hybrid search unavailable", file=sys.stderr)
+                print(
+                    f"Warning: Ollama process exited prematurely with code {proc.returncode} — hybrid search unavailable",
+                    file=sys.stderr,
+                )
                 if proc in self.owned_services:
+                    self._terminate_process_group(proc)
                     self.owned_services.remove(proc)
                 return False
             if is_ollama_healthy(host):
@@ -405,8 +594,8 @@ class Launcher:
 
         if not ready:
             print(f"Warning: Ollama failed to become ready within 20s at {host} — hybrid search unavailable", file=sys.stderr)
-            self._terminate_process(proc)
             if proc in self.owned_services:
+                self._terminate_process_group(proc)
                 self.owned_services.remove(proc)
             return False
 
@@ -457,31 +646,44 @@ class Launcher:
         signal.signal(signal.SIGTERM, sig_handler)
 
         try:
-            # 1. Meilisearch startup (required if enabled)
+            # 1. Directory creation happens here at actual runtime launch
+            self.config.data_dir.mkdir(parents=True, exist_ok=True)
+            if self.config.manage_meili and self.config.meili_db_path:
+                self.config.meili_db_path.mkdir(parents=True, exist_ok=True)
+
+            # 2. Meilisearch startup (required if enabled)
             if self.config.manage_meili:
                 self.start_meili()
 
-            # 2. Ollama startup (optional if enabled)
+            # 3. Ollama startup (optional if enabled)
             ollama_ready = False
             if self.config.manage_ollama:
                 ollama_ready = self.start_ollama()
-            elif self.config.warmup_embedding:
-                ollama_ready = is_ollama_healthy(self.config.ollama_host)
 
-            # 3. Embedding warmup (optional if enabled)
+            # 4. Embedding warmup (optional if enabled)
             if self.config.warmup_embedding:
-                if ollama_ready or not self.config.manage_ollama:
-                    self.warmup()
+                if self.config.manage_ollama:
+                    if ollama_ready:
+                        self.warmup()
+                    else:
+                        print(f"Warning: Ollama unavailable — skipping {self.config.ollama_embed_model} warmup", file=sys.stderr)
                 else:
-                    print(f"Warning: Ollama unavailable — skipping {self.config.ollama_embed_model} warmup", file=sys.stderr)
+                    # External backend: send warmup request directly without probing tags
+                    self.warmup()
 
-            # 4. Start UI
-            os.environ["FEDERATION_CATALOG"] = str(self.config.catalog_path)
-            os.environ["UI_HOST"] = self.config.ui_host
-            os.environ["UI_PORT"] = str(self.config.ui_port)
-            os.environ["KNOWLEDGE_DATA_DIR"] = str(self.config.data_dir)
+            # 5. Build isolated child environment for UI without mutating parent process
+            ui_env = os.environ.copy()
+            ui_env["FEDERATION_CATALOG"] = str(self.config.catalog_path)
+            ui_env["UI_HOST"] = self.config.ui_host
+            ui_env["UI_PORT"] = str(self.config.ui_port)
+            ui_env["KNOWLEDGE_DATA_DIR"] = str(self.config.data_dir)
+            ui_env["KNOWLEDGE_AUTO_INDEX"] = "1" if self.config.auto_index else "0"
+            ui_env["KNOWLEDGE_ENABLE_LIVE_MARIMO"] = "1" if self.config.enable_live_marimo else "0"
+            ui_env["KNOWLEDGE_MARIMO_HOST"] = self.config.marimo_host
             if self.config.meili_url:
-                os.environ["MEILI_URL"] = self.config.meili_url
+                ui_env["MEILI_URL"] = self.config.meili_url
+            if self.config.meili_api_key:
+                ui_env["MEILI_API_KEY"] = self.config.meili_api_key
 
             ui_cmd = [
                 sys.executable,
@@ -496,7 +698,12 @@ class Launcher:
                 str(self.config.ui_port),
             ]
             print(f"Starting Knowledge UI at http://{self.config.ui_host}:{self.config.ui_port} ...")
-            self.ui_process = subprocess.Popen(ui_cmd, cwd=str(UI_DIR))
+            self.ui_process = subprocess.Popen(
+                ui_cmd,
+                cwd=str(UI_DIR),
+                env=ui_env,
+                start_new_session=True,
+            )
             exit_code = self.ui_process.wait()
             self.cleanup()
             return exit_code

@@ -19,6 +19,7 @@ import asyncio
 import html
 import os
 import re
+import signal
 import socket
 import subprocess
 import sys
@@ -817,6 +818,32 @@ async def startup_event() -> None:
             raise ValueError("KNOWLEDGE_AUTO_INDEX requires MEILI_URL")
         asyncio.create_task(_watch_and_reindex())
     asyncio.create_task(_cleanup_live_marimo())
+
+
+@app.on_event("shutdown")
+def shutdown_event() -> None:
+    for session in list(LIVE_MARIMO_PROCESSES.values()):
+        proc = session.get("process")
+        if proc:
+            pgid = getattr(proc, "pid", None)
+            if pgid is not None:
+                try:
+                    os.killpg(pgid, signal.SIGTERM)
+                except (ProcessLookupError, OSError):
+                    try:
+                        proc.terminate()
+                    except OSError:
+                        pass
+                try:
+                    proc.wait(timeout=2.0)
+                except (subprocess.TimeoutExpired, OSError):
+                    try:
+                        os.killpg(pgid, signal.SIGKILL)
+                    except (ProcessLookupError, OSError):
+                        try:
+                            proc.kill()
+                        except OSError:
+                            pass
 
 
 async def _index_job() -> bool:

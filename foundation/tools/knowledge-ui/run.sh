@@ -52,7 +52,9 @@ if [[ -n "$env_file" ]]; then
     echo "Error: env file not found: $env_file" >&2
     exit 1
   fi
-  uv_args+=(--env-file "$env_file")
+  # uv 0.12.x CLI splits --env-file on literal spaces; escaping spaces with backslash preserves path
+  uv_env_file="${env_file// /\\ }"
+  uv_args+=(--env-file "$uv_env_file")
 fi
 
 cd "$ui_dir"

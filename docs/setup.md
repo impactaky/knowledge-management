@@ -229,13 +229,15 @@ uv run --locked --project foundation/tools/knowledge-ui --extra notebook marimo 
 ```
 
 The UI serves frozen HTML without executing Python. For the explicit live action,
-use the explicit uv command below to retain the optional dependency:
+install the locked notebook extra into the project environment and launch the UI
+using the shared runtime launcher:
 
 ```bash
-uv run --locked --project foundation/tools/knowledge-ui --extra notebook uvicorn server:app --app-dir foundation/tools/knowledge-ui --host 127.0.0.1 --port 7776
+uv sync --locked --project foundation/tools/knowledge-ui --extra notebook
+KNOWLEDGE_ENABLE_LIVE_MARIMO=1 bash foundation/tools/knowledge-ui/run.sh
 ```
 
-Export `KNOWLEDGE_ENABLE_LIVE_MARIMO=1` before that command if desired.
+Or declare `KNOWLEDGE_ENABLE_LIVE_MARIMO=1` within your `--env-file`.
 `KNOWLEDGE_MARIMO_HOST`, `KNOWLEDGE_MARIMO_PORT_START`/`END` and
 `KNOWLEDGE_MARIMO_IDLE_SECONDS` default to loopback (or `UI_HOST`), 7780–7879 and
 3600. Notebook sandbox dependencies declared in PEP 723 are resolved by uv and may
