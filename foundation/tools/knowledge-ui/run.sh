@@ -1,8 +1,59 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
 ui_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo_dir=$(cd -- "$ui_dir/../../.." && pwd)
 export UV_CACHE_DIR=${UV_CACHE_DIR:-"$repo_dir/.cache/uv"}
 
+env_file=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --help|-h)
+      echo "Usage: run.sh [--env-file FILE]"
+      echo ""
+      echo "Start the Knowledge Browser UI with optional managed backend services."
+      echo ""
+      echo "Options:"
+      echo "  --env-file FILE   Load environment variables from FILE via uv --env-file"
+      echo "  --help, -h        Show this help message and exit"
+      exit 0
+      ;;
+    --env-file)
+      if [[ $# -lt 2 || -z "${2:-}" ]]; then
+        echo "Error: --env-file requires a file path argument" >&2
+        exit 2
+      fi
+      env_file="$2"
+      shift 2
+      ;;
+    --env-file=*)
+      env_file="${1#*=}"
+      if [[ -z "$env_file" ]]; then
+        echo "Error: --env-file requires a file path argument" >&2
+        exit 2
+      fi
+      shift
+      ;;
+    *)
+      echo "Error: unrecognized argument: $1" >&2
+      echo "Usage: run.sh [--env-file FILE]" >&2
+      exit 2
+      ;;
+  esac
+done
+
+uv_args=()
+if [[ -n "$env_file" ]]; then
+  # Resolve env_file relative to caller's cwd before changing directories
+  if [[ ! "$env_file" = /* ]]; then
+    env_file="$PWD/$env_file"
+  fi
+  if [[ ! -f "$env_file" ]]; then
+    echo "Error: env file not found: $env_file" >&2
+    exit 1
+  fi
+  uv_args+=(--env-file "$env_file")
+fi
+
 cd "$ui_dir"
-exec uv run --locked --project "$ui_dir" uvicorn server:app --host "${UI_HOST:-127.0.0.1}" --port "${UI_PORT:-7776}"
+exec uv run --locked --project "$ui_dir" "${uv_args[@]}" python launch.py

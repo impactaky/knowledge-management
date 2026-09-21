@@ -56,21 +56,62 @@ and worklog are fixtures; new drafts and worklogs are ignored by its `.gitignore
 | `FEDERATION_CATALOG`, `KNOWLEDGE_CATALOG` | Required Catalog selection, in that precedence order |
 | `MEILI_URL` | Optional explicit Meilisearch destination; no default and no automatic launch |
 | `MEILI_API_KEY` | Optional bearer key, used by Core, UI and indexer; keep outside Git |
+| `KNOWLEDGE_MANAGE_MEILI` | `1` enables launcher checking/starting local Meilisearch; default off (`0`) |
+| `MEILI_BIN` | Path or binary name for Meilisearch; default `meilisearch` |
+| `MEILI_DB_PATH` | Database path for managed Meilisearch; default `<data_dir>/meili_data` |
+| `MEILI_MASTER_KEY` | Optional Meilisearch server master key; distinct from client `MEILI_API_KEY` |
 | `OLLAMA_EMBED_URL` | Optional embedding API URL **as reached by Meilisearch**; configures its `default` embedder during indexing |
 | `OLLAMA_EMBED_MODEL` | Model name, default `bge-m3` when an embedding URL is set |
-| `KNOWLEDGE_AUTO_INDEX` | `1` enables startup indexing and file watching; default off; requires `MEILI_URL` |
+| `KNOWLEDGE_MANAGE_OLLAMA` | `1` enables launcher checking/starting local Ollama service; default off (`0`) |
+| `OLLAMA_BIN` | Path or binary name for Ollama; default `ollama` |
+| `OLLAMA_HOST` | Host:port for Ollama daemon, default `127.0.0.1:11434` |
+| `OLLAMA_MODELS` | Optional model storage directory for Ollama |
+| `KNOWLEDGE_WARMUP_EMBEDDING` | `1` enables embedding model preload via `/api/embed` with `keep_alive=-1`; default off (`0`) |
+| `OLLAMA_WARMUP_URL` | Optional launcher warmup endpoint override if distinct from Meilisearch's `OLLAMA_EMBED_URL` |
+| `KNOWLEDGE_AUTO_INDEX` | `1` enables startup indexing and file watching; default off (`0`); requires `MEILI_URL` |
 | `KNOWLEDGE_WATCH_INTERVAL` | Watch interval in seconds, default 60 |
+| `KNOWLEDGE_ENABLE_LIVE_MARIMO` | `1` enables live notebook execution; default off (`0`); requires optional `notebook` extra |
+| `KNOWLEDGE_MARIMO_HOST` | Host for live marimo instances; defaults to `UI_HOST` or `127.0.0.1` |
 | `UI_HOST`, `UI_PORT` | Browser bind address/port, default `127.0.0.1:7776` |
 | `KNOWLEDGE_UI_BASE_URL` | Base URL used by the article URL helper |
 | `UV_CACHE_DIR`, `DENO_DIR` | Set to checkout `.cache/uv` and `.cache/deno` for local caches |
-| `KNOWLEDGE_DATA_DIR` | Optional live-notebook logs; default checkout `.data` |
+| `KNOWLEDGE_DATA_DIR` | Runtime logs and live notebook state; default checkout `.data` |
 | `TMPDIR` | Optional location for machine-local indexing lock files and temporary work |
+
+Accepted boolean values for all feature flags are `1`/`0`, `true`/`false`, `yes`/`no`, and `on`/`off` (case-insensitive).
 
 Source Markdown/Python are originals. Index entries, chunks, caches and generated
 browser assets are disposable derived state. Refresh operates on `entries` and
 `chunks` in the selected backend; use a dedicated service for this Catalog.
 `indexer --index-prefix` is for isolated experiments; UI/Core read the unprefixed
 indexes, so do not set it for the browser's normal destination.
+
+## Runtime launcher and service management
+
+The common runtime launcher (`foundation/tools/knowledge-ui/run.sh`) provides
+readiness checking, optional local backend process management, embedding warmup,
+and child cleanup on exit or termination signals:
+
+```bash
+# UI-only / offline launch:
+bash foundation/tools/knowledge-ui/run.sh
+
+# Launch with an explicit environment file:
+bash foundation/tools/knowledge-ui/run.sh --env-file /path/to/store/runtime.env
+```
+
+`run.sh` delegates `--env-file` directly to `uv run --env-file`. Values already
+present in the process environment take precedence over file contents.
+A template environment file is available at `.env.example`.
+
+When `KNOWLEDGE_MANAGE_MEILI=1` or `KNOWLEDGE_MANAGE_OLLAMA=1` is set:
+- If the configured endpoint is already healthy, it is reused.
+- If not running, the configured binary is launched and checked for readiness.
+- Managed services are strictly local: remote targets are rejected before mutation.
+- When the UI stops or receives SIGTERM/SIGINT, only child processes started by the launcher are terminated; reused external processes remain running.
+- Logs from owned services are written to `<KNOWLEDGE_DATA_DIR>/meilisearch.log` and `<KNOWLEDGE_DATA_DIR>/ollama.log`.
+
+For systemd deployment, use the template at `foundation/tools/knowledge-ui/knowledge-ui.service.example`.
 
 ## Core and MCP
 
@@ -87,6 +128,8 @@ uv run --locked --project foundation/tools/knowledge-ui python foundation/integr
 The last command waits for MCP stdio messages. Configure your client's MCP server
 with the following structure, substituting your own absolute checkout and Catalog
 paths. `--directory` makes script resolution independent of the client's cwd.
+MCP and UI can share the same `.env` file via uv's `--env-file`. MCP stays a pure
+client of configured backends and does not acquire launch duties.
 Do not send UI logs to the MCP process's stdout.
 
 ```json
@@ -94,9 +137,14 @@ Do not send UI logs to the MCP process's stdout.
   "mcpServers": {
     "knowledge-federation": {
       "command": "uv",
-      "args": ["run", "--locked", "--directory", "/path/to/checkout", "--project", "foundation/tools/knowledge-ui", "python", "foundation/integrations/federation-mcp/server.py"],
+      "args": [
+        "run", "--locked",
+        "--directory", "/path/to/checkout",
+        "--project", "foundation/tools/knowledge-ui",
+        "--env-file", "/path/to/store/runtime.env",
+        "python", "foundation/integrations/federation-mcp/server.py"
+      ],
       "env": {
-        "FEDERATION_CATALOG": "/path/to/store/CATALOG.md",
         "UV_CACHE_DIR": "/path/to/checkout/.cache/uv"
       }
     }

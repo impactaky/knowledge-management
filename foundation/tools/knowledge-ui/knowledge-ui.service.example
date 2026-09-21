@@ -1,0 +1,15 @@
+[Unit]
+Description=Knowledge Browser UI
+After=network.target
+
+[Service]
+Type=simple
+# Ensure PATH includes uv and native backends (e.g. ~/.local/bin)
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+# Substitute your knowledge-management checkout path and store .env path
+ExecStart=/path/to/knowledge-management/foundation/tools/knowledge-ui/run.sh --env-file %h/.config/knowledge/runtime.env
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
