@@ -1,0 +1,82 @@
+# Agent Exchange deployment
+
+This reference covers the Launcher config, the systemd deployment env, and the
+required commands. It is optional infrastructure around the exchange protocol
+defined in [SKILL.md](../SKILL.md); the protocol does not depend on systemd.
+
+## Two different files
+
+- **Launcher config** (`agent-exchange.toml`): which Agent implementation the
+  Launcher starts, as `[implementation] kind` and `args`. Selected with
+  `AGENT_EXCHANGE_CONFIG`, then
+  `${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/agent-exchange.toml`.
+  See [../config.example.toml](../config.example.toml).
+- **Deployment env** (`agent-exchange.env`): where the skill lives and how the
+  responder reaches Herdr. Read only at install time by the systemd adapter.
+  Selected with `AGENT_EXCHANGE_ENV_FILE`, then
+  `${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/agent-exchange.env`.
+
+Both are user configuration. Keep them outside this repository.
+
+## Deployment env values
+
+The env file uses systemd `EnvironmentFile` syntax (`KEY=value`, `#` comments)
+and must define:
+
+| Variable | Meaning |
+|---|---|
+| `AGENT_EXCHANGE_SKILL_DIR` | Absolute path of this `skills/agent-exchange` directory |
+| `AGENT_EXCHANGE_ROOT` | Absolute Exchange Directory shared by requesting and responding agents |
+| `HERDR_BIN` | Absolute path of the Herdr executable |
+| `HERDR_SESSION` | Herdr session name for responders, for example `agent-exchange` |
+
+Example (replace every path with your own; never commit real values):
+
+```sh
+AGENT_EXCHANGE_SKILL_DIR=/absolute/path/to/knowledge-management/skills/agent-exchange
+AGENT_EXCHANGE_ROOT=/absolute/path/to/agent-exchange
+HERDR_BIN=/absolute/path/to/herdr
+HERDR_SESSION=agent-exchange
+```
+
+Responder executables must be discoverable by the Herdr server. If they are not
+on the default `PATH`, extend `PATH` in the env file rather than committing a
+machine-specific path to a unit.
+
+## Install the systemd user units
+
+```bash
+skills/agent-exchange/scripts/install-systemd.sh --dry-run   # review
+skills/agent-exchange/scripts/install-systemd.sh             # write units
+systemctl --user daemon-reload
+systemctl --user enable --now herdr-agent-exchange.service agent-exchange-launcher.service
+```
+
+The installer resolves the env file once, at install time, and writes its
+absolute path into `EnvironmentFile=`. The generated unit therefore does not
+depend on the systemd user manager inheriting `XDG_CONFIG_HOME`, and it does not
+embed the skill directory, Exchange Directory, Herdr executable or session name.
+Generated units default to `$XDG_CONFIG_HOME/systemd/user`, or
+`$HOME/.config/systemd/user` when `XDG_CONFIG_HOME` is unset. Use
+`--target-dir` to stage them elsewhere. `--env-file` overrides the env
+file lookup.
+
+## Required commands
+
+Send, respond, wait and cleanup:
+
+- `bash`, `git`, `jq`, `inotifywait`, `flock`
+
+Launcher and systemd adapter:
+
+- the above plus a Herdr executable and `timeout`
+
+If a command is missing, report which command is unavailable and which
+operation needs it. Do not substitute a different exchange mechanism.
+
+## Operational boundary
+
+Herdr is an external system. This skill does not vendor Herdr, and it does not
+connect Herdr sessions to the file-based Agent Exchange protocol: a shared
+session name is only a naming convention. `order` drives Herdr directly and
+does not call Agent Exchange.
