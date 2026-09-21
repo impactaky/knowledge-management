@@ -979,7 +979,11 @@ http.server.HTTPServer(('127.0.0.1', {external_port}), H).serve_forever()
             # 2. Configure launcher environment for managed meili + UI
             meili_port = get_free_port()
             ui_port = get_free_port()
-            launcher_env = os.environ.copy()
+            launcher_env = {
+                k: v
+                for k, v in os.environ.items()
+                if not k.startswith(("FEDERATION_", "KNOWLEDGE_", "MEILI_", "OLLAMA_", "UI_"))
+            }
             launcher_env.update({
                 "FEDERATION_CATALOG": str(MINIMAL_CATALOG),
                 "KNOWLEDGE_MANAGE_MEILI": "1",
