@@ -110,22 +110,50 @@ require_value HERDR_SESSION
 [[ -d "$AGENT_EXCHANGE_SKILL_DIR" ]] || die "AGENT_EXCHANGE_SKILL_DIR does not exist: $AGENT_EXCHANGE_SKILL_DIR"
 [[ -x "$HERDR_BIN" ]] || die "HERDR_BIN is not executable: $HERDR_BIN"
 
-# systemd unit syntax treats quotes, backslashes, '%' specifiers and '$'
-# variable expansion specially. The generator quotes paths so spaces are safe,
-# but it cannot represent these characters unambiguously; refuse them instead
-# of emitting a unit that silently truncates or expands the path.
-reject_unrepresentable_path() {
+# systemd unit syntax handles these paths differently:
+#   * EnvironmentFile= takes the rest of the line verbatim, so spaces are safe
+#     unquoted, but unit specifiers are expanded. A literal '%' is doubled.
+#   * ExecStart= splits on whitespace, so the executable path is quoted; unit
+#     specifiers are expanded there too and a literal '%' is doubled.
+# A literal '$' cannot be checked portably by systemd-analyze, so it is
+# rejected along with quotes, backslashes and control characters instead of
+# emitting a unit that truncates or rewrites the path.
+reject_control_characters() {
     local name="$1"
     local value="$2"
     case "$value" in
-        *$'\n'* | *$'\r'* | *'"'* | *'\\'* | *'%'* | *'$'*)
-            die "$name contains a character that cannot be represented safely in a systemd unit: $value"
+        *$'\n'* | *$'\r'*)
+            die "$name contains a newline or carriage return: $value"
             ;;
     esac
 }
 
-reject_unrepresentable_path AGENT_EXCHANGE_SKILL_DIR "$AGENT_EXCHANGE_SKILL_DIR"
-reject_unrepresentable_path EnvironmentFile "$env_file"
+environment_file_value() {
+    local value="$1"
+    reject_control_characters EnvironmentFile "$value"
+    case "$value" in
+        *'"'* | *\\* | *'$'*)
+            die "EnvironmentFile path cannot be represented safely in a systemd unit: $value"
+            ;;
+    esac
+    case "$value" in
+        [[:space:]]* | *[[:space:]])
+            die "EnvironmentFile path must not start or end with whitespace: $value"
+            ;;
+    esac
+    printf '%s\n' "${value//%/%%}"
+}
+
+skill_dir_value() {
+    local value="$1"
+    reject_control_characters AGENT_EXCHANGE_SKILL_DIR "$value"
+    case "$value" in
+        *'"'* | *\\* | *'$'*)
+            die "AGENT_EXCHANGE_SKILL_DIR cannot be represented safely in ExecStart=: $value"
+            ;;
+    esac
+    printf '%s\n' "${value//%/%%}"
+}
 
 if [[ -z "$target_dir" ]]; then
     if [[ -n "${XDG_CONFIG_HOME:-}" ]]; then
@@ -139,8 +167,10 @@ escape_replacement() {
     printf '%s' "$1" | sed -e 's/[&|\\]/\\&/g'
 }
 
-env_replacement="$(escape_replacement "$env_file")"
-skill_replacement="$(escape_replacement "$AGENT_EXCHANGE_SKILL_DIR")"
+env_value="$(environment_file_value "$env_file")" || exit 1
+env_replacement="$(escape_replacement "$env_value")"
+skill_value="$(skill_dir_value "$AGENT_EXCHANGE_SKILL_DIR")" || exit 1
+skill_replacement="$(escape_replacement "$skill_value")"
 
 render_template() {
     local template="$1"

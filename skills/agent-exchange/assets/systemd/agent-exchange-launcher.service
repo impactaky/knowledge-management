@@ -5,7 +5,7 @@ After=herdr-agent-exchange.service
 
 [Service]
 Type=simple
-EnvironmentFile="@ENVIRONMENT_FILE@"
+EnvironmentFile=@ENVIRONMENT_FILE@
 ExecStart="@SKILL_DIR@/scripts/launcher.sh"
 Restart=on-failure
 RestartSec=3

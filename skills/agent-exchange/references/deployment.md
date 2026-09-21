@@ -95,11 +95,13 @@ starts: `--dangerously-skip-permissions` for any kind, `--mode` for `agy`, and
 
 ## Unit path safety
 
-The installer quotes `EnvironmentFile=` and `ExecStart=` so paths with spaces
-are parsed as one word. Characters that systemd unit syntax cannot represent
-unambiguously in a path (`"`, `\`, newline, carriage return, `%` specifiers and
-`$` variable expansion) are rejected instead of emitting a unit that silently
-truncates or expands the path.
+`EnvironmentFile=` is emitted unquoted, because systemd keeps the rest of the
+line verbatim (so spaces survive), and a literal `%` is doubled so it is not
+read as a unit specifier. `ExecStart=` is quoted so a space-containing skill
+directory stays one word, and a literal `%` is doubled there too. Characters
+that cannot be represented safely in a path (`"`, `\`, newline, carriage return
+and `$`) are rejected instead of emitting a unit that truncates or rewrites the
+path.
 
 ## Operational boundary
 
