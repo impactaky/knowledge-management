@@ -889,7 +889,8 @@ http.server.HTTPServer((host, int(port_str)), H).serve_forever()
             "KNOWLEDGE_AUTO_INDEX": "true",
             "KNOWLEDGE_ENABLE_LIVE_MARIMO": "yes",
         }
-        cfg = LauncherConfig.from_env(env)
+        with patch("importlib.util.find_spec", return_value=unittest.mock.MagicMock()):
+            cfg = LauncherConfig.from_env(env)
         launcher = Launcher(cfg)
 
         observed_env = None
@@ -906,7 +907,7 @@ http.server.HTTPServer((host, int(port_str)), H).serve_forever()
         # Ensure parent os.environ doesn't have these
         parent_before = dict(os.environ)
 
-        with patch("subprocess.Popen", side_effect=mock_popen):
+        with patch("launch.terminate_process_group"), patch("subprocess.Popen", side_effect=mock_popen):
             exit_code = launcher.run()
             self.assertEqual(exit_code, 0)
 
@@ -940,7 +941,15 @@ class TestRunScript(unittest.TestCase):
         self.assertIn("env file not found", res.stderr)
 
     def test_run_sh_escapes_spaces_and_preserves_exact_argv_boundaries(self):
-        for name in ("my config.env", "one\\name.env", "one\\ name.env", "tab\tname.env"):
+        for name in (
+            "my config.env",
+            "one\\name.env",
+            "one\\ name.env",
+            "tab\tname.env",
+            "cr\rname.env",
+            "lf\nname.env",
+            "crlf\r\nname.env",
+        ):
             with tempfile.TemporaryDirectory(prefix="test spaces ") as tmp:
                 tmp_path = Path(tmp)
                 work_dir = tmp_path / "caller dir"
@@ -982,6 +991,8 @@ class TestRunScript(unittest.TestCase):
                     .replace("\\", "\\\\")
                     .replace(" ", "\\ ")
                     .replace("\t", "\\\t")
+                    .replace("\r", "\\\r")
+                    .replace("\n", "\\\n")
                 )
                 self.assertEqual(args[idx + 1], expected_escaped)
                 self.assertEqual(args[-2:], ["python", "launch.py"])

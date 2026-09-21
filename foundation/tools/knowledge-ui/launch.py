@@ -16,7 +16,7 @@ import subprocess
 import sys
 import time
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
+from urllib.parse import ParseResult, urlparse
 from urllib.request import Request, urlopen
 
 UI_DIR = Path(__file__).resolve().parent

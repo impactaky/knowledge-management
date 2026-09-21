@@ -53,10 +53,12 @@ if [[ -n "$env_file" ]]; then
     exit 1
   fi
   # uv 0.12.x CLI splits --env-file on literal whitespace and unescapes backslashes.
-  # Escape original backslashes first, then spaces and tabs:
+  # Escape original backslashes first, then spaces, tabs, CR, and LF:
   uv_env_file="${env_file//\\/\\\\}"
   uv_env_file="${uv_env_file// /\\ }"
   uv_env_file="${uv_env_file//$'\t'/\\$'\t'}"
+  uv_env_file="${uv_env_file//$'\r'/\\$'\r'}"
+  uv_env_file="${uv_env_file//$'\n'/\\$'\n'}"
   uv_args+=(--env-file "$uv_env_file")
 fi
 

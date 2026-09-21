@@ -62,12 +62,12 @@ and worklog are fixtures; new drafts and worklogs are ignored by its `.gitignore
 | `MEILI_MASTER_KEY` | Optional Meilisearch server master key; distinct from client `MEILI_API_KEY` |
 | `OLLAMA_EMBED_URL` | Optional embedding API URL **as reached by Meilisearch**; configures its `default` embedder during indexing |
 | `OLLAMA_EMBED_MODEL` | Model name, default `bge-m3` when an embedding URL is set |
-| `KNOWLEDGE_MANAGE_OLLAMA` | `1` enables launcher checking/starting local Ollama service; default off (`0`) |
+| `KNOWLEDGE_MANAGE_OLLAMA` | `1` enables launcher checking/starting local Ollama service (requires `OLLAMA_HOST` or `OLLAMA_EMBED_URL`); default off (`0`) |
 | `OLLAMA_BIN` | Path or binary name for Ollama; default `ollama` |
 | `OLLAMA_HOST` | Host:port for Ollama daemon; required when `KNOWLEDGE_MANAGE_OLLAMA=1` (or derived from `OLLAMA_EMBED_URL`); no implicit default |
 | `OLLAMA_MODELS` | Optional model storage directory for Ollama |
 | `KNOWLEDGE_WARMUP_EMBEDDING` | `1` enables embedding model preload via `/api/embed` with `keep_alive=-1`; default off (`0`) |
-| `OLLAMA_WARMUP_URL` | Optional launcher warmup endpoint override if distinct from Meilisearch's `OLLAMA_EMBED_URL` |
+| `OLLAMA_WARMUP_URL` | Optional launcher warmup endpoint override if distinct from Meilisearch's `OLLAMA_EMBED_URL`; used only for warmup, not service management |
 | `KNOWLEDGE_AUTO_INDEX` | `1` enables startup indexing and file watching; default off (`0`); requires `MEILI_URL` |
 | `KNOWLEDGE_WATCH_INTERVAL` | Watch interval in seconds, default 60 |
 | `KNOWLEDGE_ENABLE_LIVE_MARIMO` | `1` enables live notebook execution; default off (`0`); requires optional `notebook` extra |
@@ -109,7 +109,7 @@ When `KNOWLEDGE_MANAGE_MEILI=1` or `KNOWLEDGE_MANAGE_OLLAMA=1` is set:
 - If not running, the configured binary is launched and checked for readiness.
 - Managed services are strictly local IPv4 loopback (`127.0.0.1`) or `localhost`: remote targets and IPv6 addresses are rejected during startup configuration validation.
 - Managed HTTP endpoints cannot contain authentication credentials, custom path components, or query/fragment components.
-- `OLLAMA_HOST` has no implicit default: an explicit endpoint (`OLLAMA_HOST`, `OLLAMA_EMBED_URL`, or `OLLAMA_WARMUP_URL`) is required when Ollama management or model warmup is enabled.
+- `OLLAMA_HOST` has no implicit default: service management (`KNOWLEDGE_MANAGE_OLLAMA=1`) requires `OLLAMA_HOST` or `OLLAMA_EMBED_URL`; `OLLAMA_WARMUP_URL` alone is for warmup, not management.
 - When the UI stops or receives SIGTERM/SIGINT, owned process groups (`os.killpg`) started by the launcher are cleanly terminated; reused external processes remain running.
 - Logs from owned services are written to `<KNOWLEDGE_DATA_DIR>/meilisearch.log` and `<KNOWLEDGE_DATA_DIR>/ollama.log`.
 
