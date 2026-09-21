@@ -6,8 +6,9 @@ shared core, MCP adapter, UI, indexer, checker, Hermes memory provider, workflow
 Users and organizations manage their actual knowledge in separate stores configured by
 selecting their own Catalog.
 
-Core, MCP, the browser, indexer, checker, Hermes memory provider, and eight knowledge workflows are
-implemented here. The bundled store contains only synthetic examples.
+Core, MCP, the browser, indexer, checker, Hermes memory provider, and the knowledge,
+delivery and agent workflows are implemented here. The bundled store contains
+only synthetic examples.
 **Repository creation has been authorized by the author; project license remains undecided.**
 No project-wide license is granted by this repository; see [provenance and notices](docs/provenance.md).
 
@@ -34,6 +35,7 @@ needed for browsing, live claim/entrance search, explicit grep, or checking.
 
 - [Installation, configuration, MCP and optional search services](docs/setup.md)
 - [Understanding → draft → human review → stock → search → browse](docs/workflow.md)
+- [Delivery coordination, order and Agent Exchange](docs/setup.md#delivery-and-agent-exchange-configuration)
 - [Search and publication contract](foundation/integrations/federation-core/README.md)
 - [Synthetic Catalog](examples/minimal/CATALOG.md)
 - [Extraction scope and acceptance evidence](docs/extraction.md)
@@ -60,6 +62,14 @@ does not reconfigure an already connected MCP server. See [store selection](docs
 ```bash
 uv run --locked --project foundation/tools/knowledge-ui pytest foundation/tests -q
 uv run --locked --project foundation/tools/knowledge-ui python scripts/smoke.py
+```
+
+The suite also runs the Agent Exchange and config-resolver shell contracts with
+temporary directories and a fake Herdr. Run one directly, for example:
+
+```bash
+bash skills/agent-exchange/tests/test-agent-exchange.sh
+bash skills/order/tests/test-resolve-config.sh
 ```
 
 The tests use temporary synthetic stores and mock backends; the smoke script

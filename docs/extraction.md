@@ -12,7 +12,8 @@ services and harness wiring remain outside this project's operations.
 - Shared Catalog/search/publication/claim modules and a standalone CLI.
 - MCP stdio tools for Catalog retrieval, candidates and explicit literal grep.
 - Knowledge browser, locally built assets, document indexer and read-only checker.
-- Eight knowledge workflows and their required portable references/helpers.
+- Eight knowledge workflows plus the `propose`, `order` and `agent-exchange`
+  delivery/agent workflows, with their required portable references/helpers.
 - A synthetic store with file/directory entrances, an adopted article with claims,
   pending draft, worklog and learning map demonstrating search exclusions.
 - Explicit Catalog/backend selection, local dependencies/caches, opt-in indexing

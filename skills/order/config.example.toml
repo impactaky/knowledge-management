@@ -1,0 +1,25 @@
+# order implementation config example.
+#
+# Copy this file outside the repository and select it with ORDER_CONFIG, or
+# place it at ${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/order.toml.
+# A real config is user configuration and must not be committed here. The order
+# skill resolves config independently of the implementation repository.
+#
+# There is no built-in kind or model. If an order does not specify an
+# implementation explicitly, a valid config is required or the order stops
+# before starting any agent.
+
+[implementation]
+kind = "example-kind"
+args = ["--example-native-arg", "value"]
+
+# Optional Herdr session that hosts the implementation agent. Defaults to
+# "agent-exchange" when omitted.
+[herdr]
+session = "agent-exchange"
+
+# Optional worklog root. Used only when neither AGENT_WORKLOG_DIR nor an
+# explicitly confirmed absolute worklog_dir is available, to locate the task
+# directory. There is no implicit private default.
+# [worklog]
+# root = "/absolute/path/to/worklog/root"

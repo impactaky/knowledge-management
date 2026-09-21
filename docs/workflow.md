@@ -55,7 +55,7 @@ Learning maps update only after the user's final outcome, in a separate commit.
 
 ## Skill setup
 
-The eight skill directories under `skills/` form one interoperating set. Register
+The skill directories under `skills/` form one interoperating set. Register
 that directory using your agent's supported skill mechanism, or point repository
 skill entries at the individual directories in this checkout. If the environment
 has no native skill support, read the selected `SKILL.md` directly and follow its
@@ -86,6 +86,22 @@ Catalog alone does not authorize writes to its store.
 | write-article | Prepared understanding → reviewed article adoption |
 | distill | Adopted durable knowledge → glossary/rules/decision record |
 | grill-federated | Questions and boundary choices → agreed terms and routing |
+| propose | Investigated whole design → diff review → design confirmation → order |
+| order | Confirmed design → one self-contained order → Herdr implementation and review |
+| agent-exchange | One Request / one Response → durable file handoff, explicit Threads |
+
+`propose`, `order` and `agent-exchange` extend the same model to delivery
+coordination (see [Delivery Coordination](../foundation/modules/delivery-coordination/CONTEXT.md)).
+Design confirmation never authorizes implementation by itself: `propose`
+requires a separate implementation authorization, and `order` starts only when
+an explicit selection or a valid `order.toml` names the implementation. `order`
+drives a Herdr agent session directly and does not call the file-based Agent
+Exchange protocol; a shared session name does not connect the two. `order`
+needs a reachable Herdr CLI and daemon plus `git`. `agent-exchange` needs
+`bash`, `git`, `jq`, `inotifywait`, `flock` and a Herdr executable; report the
+specific missing command instead of substituting another mechanism. See
+[installation and configuration](setup.md) and the
+[Agent Exchange deployment reference](../skills/agent-exchange/references/deployment.md).
 
 Skills are primarily Japanese; setup and contracts also have English explanations.
 An agent needs file editing and Git access, source-reading capabilities appropriate

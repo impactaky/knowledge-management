@@ -1,0 +1,19 @@
+# Agent Exchange Launcher config example.
+#
+# Copy this file outside the repository and select it explicitly with
+# AGENT_EXCHANGE_CONFIG, or place it at
+# ${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/agent-exchange.toml.
+# A real config is user configuration and must not be committed here.
+#
+# This file selects the responding Agent, not deployment paths. Exchange
+# Directory, Herdr executable and session name belong to the systemd deployment
+# env file (see references/deployment.md).
+#
+# At startup the Launcher validates this file once. A missing file, invalid
+# TOML, a missing [implementation] section, an empty kind or a non-string args
+# array stops the Launcher before any agent starts. Unknown kinds are passed to
+# Herdr as-is; there is no automatic fallback to another kind or model.
+
+[implementation]
+kind = "example-kind"
+args = ["--example-native-arg", "value"]

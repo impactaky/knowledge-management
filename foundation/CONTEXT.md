@@ -1,6 +1,6 @@
 # Knowledge Management
 
-知識の作成・採用・保存・再利用と、それに伴う作業を一つのモデルと言語で扱う語彙。このリポジトリ（knowledge-management）は再利用可能な検索コア、MCP、UI、インデクサ、チェッカー、8つの知識ワークフロー、および共有語彙・規約の正本である。
+知識の作成・採用・保存・再利用と、それに伴う作業を一つのモデルと言語で扱う語彙。このリポジトリ（knowledge-management）は再利用可能な検索コア、MCP、UI、インデクサ、チェッカー、知識ワークフローと delivery workflow、および共有語彙・規約の正本である。
 
 個人の知識や組織の機密は別個の信頼境界を持つ各知識ストア（Private Store等）で管理され、本共有基盤のコードを実行して利用する。各ストアは独自のCatalog、Knowledge Package、記事層、作業状態を保持する。
 
@@ -8,6 +8,8 @@
 
 - [Knowledge Federation](modules/knowledge-federation/CONTEXT.md) — 知識の保存・解決・蒸留・横断検索
 - [Article Curation](modules/article-curation/CONTEXT.md) — 記事の理解・執筆・採用・更新・読解摩擦の改善
+- [Delivery Coordination](modules/delivery-coordination/CONTEXT.md) — 設計提案から実装許可・発注・review境界までの調整
+- [Agent Exchange](modules/agent-exchange/CONTEXT.md) — 一Request一Responseの交換と明示Threadの継続
 
 ## System
 
