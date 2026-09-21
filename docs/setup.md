@@ -115,6 +115,42 @@ When `KNOWLEDGE_MANAGE_MEILI=1` or `KNOWLEDGE_MANAGE_OLLAMA=1` is set:
 
 For systemd deployment, use the template at `foundation/tools/knowledge-ui/knowledge-ui.service.example`.
 
+## Delivery and agent exchange configuration
+
+The `propose`, `order` and `agent-exchange` skills are portable. They read user
+configuration from outside this checkout and never from a committed real config.
+
+`order` selects the implementation agent as `[implementation] kind` and ordered
+`args`. The config path is an explicit `ORDER_CONFIG`, then
+`${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/order.toml`. The skill's
+`scripts/resolve-config.py` validates the file and prints a JSON snapshot. A
+missing or invalid config stops the order before any agent starts; there is no
+built-in kind or model. An order-level explicit selection overrides the config
+for that order only. See [order config example](../skills/order/config.example.toml).
+
+Agent Exchange separates two user files with different purposes:
+
+- Launcher config: `agent-exchange.toml`, selected by `AGENT_EXCHANGE_CONFIG`,
+  then `${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/agent-exchange.toml`.
+  It names the responding agent `kind` and ordered `args`. See
+  [config example](../skills/agent-exchange/config.example.toml).
+- Deployment env: `agent-exchange.env`, selected by
+  `AGENT_EXCHANGE_ENV_FILE`, then
+  `${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/agent-exchange.env`.
+  It holds the skill directory, Exchange Directory, Herdr executable and
+  session name, and is read only by the systemd adapter at install time.
+
+```bash
+skills/agent-exchange/scripts/install-systemd.sh --dry-run
+skills/agent-exchange/scripts/install-systemd.sh
+systemctl --user daemon-reload
+```
+
+The generated units embed only the resolved absolute `EnvironmentFile=` path,
+so the systemd user manager does not need `XDG_CONFIG_HOME`. Full values,
+dependencies and boundaries are in the
+[Agent Exchange deployment reference](../skills/agent-exchange/references/deployment.md).
+
 ## Core and MCP
 
 Core is an importable source package and a small CLI. From the checkout root:
