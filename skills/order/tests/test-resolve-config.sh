@@ -25,14 +25,15 @@ write_config() {
 }
 
 run_resolver() {
-    # run_resolver <explicit> <order_config> <xdg> <home>
+    # run_resolver <explicit> <order_config> <xdg> <home> [resolver args...]
     local explicit="$1" order_config="$2" xdg="$3" home="$4"
+    shift 4
     local -a extra=()
     [[ -z "$explicit" ]] || extra=(--config "$explicit")
     set +e
     resolver_out="$(
         ORDER_CONFIG="$order_config" XDG_CONFIG_HOME="$xdg" HOME="$home" \
-            python3 "$RESOLVER" "${extra[@]}" 2>"$test_root/stderr"
+            python3 "$RESOLVER" "${extra[@]}" "$@" 2>"$test_root/stderr"
     )"
     resolver_status=$?
     set -e
@@ -120,5 +121,144 @@ grep -F 'XDG_CONFIG_HOME must be an absolute path' "$test_root/stderr" >/dev/nul
 # A relative HOME fallback is rejected for the same reason.
 run_resolver '' '' '' 'relative/home'
 [[ "$resolver_status" -ne 0 ]] || fail 'relative HOME was accepted'
+
+# --- Named implementation candidates ---------------------------------------
+
+named="$test_root/named.toml"
+write_config "$named" \
+    '[implementation]' \
+    'name = "fast-code"' \
+    '[implementations.fast-code]' \
+    'label = "Example fast coding model"' \
+    'kind = "example-cli"' \
+    'args = ["--model", "example-model"]' \
+    '[implementations.reasoning]' \
+    'kind = "another-cli"' \
+    'args = ["--model", "another-example-model", "--effort", "high"]' \
+    '[herdr]' \
+    'session = "custom-session"' \
+    '[worklog]' \
+    'root = "/absolute/worklog/root"'
+
+# --list reports names, labels, kinds and exact args in config order without
+# resolving a default, launching an agent or querying a provider.
+run_resolver "$named" '' '' '' --list
+[[ "$resolver_status" -eq 0 ]] || fail "--list failed: $(cat "$test_root/stderr")"
+assert_eq "$(jq -r .config_path <<<"$resolver_out")" \
+    "$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$named")" 'list config path'
+assert_eq "$(jq -r .default <<<"$resolver_out")" fast-code 'list default name'
+assert_eq "$(jq -r '.implementations | length' <<<"$resolver_out")" 2 'list candidate count'
+assert_eq "$(jq -r '.implementations[0].name' <<<"$resolver_out")" fast-code 'list preserves config order'
+assert_eq "$(jq -r '.implementations[1].name' <<<"$resolver_out")" reasoning 'list preserves config order'
+assert_eq "$(jq -r '.implementations[0].label' <<<"$resolver_out")" \
+    'Example fast coding model' 'list label'
+assert_eq "$(jq -r '.implementations[1].label' <<<"$resolver_out")" reasoning 'label defaults to name'
+assert_eq "$(jq -r '.implementations[0].kind' <<<"$resolver_out")" example-cli 'list kind'
+assert_eq "$(jq -c '.implementations[1].args' <<<"$resolver_out")" \
+    '["--model","another-example-model","--effort","high"]' 'list exact args order'
+
+# A named default resolves without a selector and keeps inherited metadata.
+run_resolver "$named" '' '' ''
+[[ "$resolver_status" -eq 0 ]] || fail "named default failed: $(cat "$test_root/stderr")"
+assert_eq "$(jq -r .kind <<<"$resolver_out")" example-cli 'named default kind'
+assert_eq "$(jq -c .args <<<"$resolver_out")" '["--model","example-model"]' 'named default args'
+assert_eq "$(jq -r .implementation <<<"$resolver_out")" fast-code 'named default identity'
+assert_eq "$(jq -r .label <<<"$resolver_out")" 'Example fast coding model' 'named default label'
+assert_eq "$(jq -r .source <<<"$resolver_out")" config 'named default source'
+assert_eq "$(jq -r .session <<<"$resolver_out")" custom-session 'named default session'
+assert_eq "$(jq -r .worklog_root <<<"$resolver_out")" /absolute/worklog/root 'named default worklog'
+
+# --implementation overrides a different valid default for one order only.
+run_resolver "$named" '' '' '' --implementation reasoning
+[[ "$resolver_status" -eq 0 ]] || fail "--implementation failed: $(cat "$test_root/stderr")"
+assert_eq "$(jq -r .kind <<<"$resolver_out")" another-cli 'selected kind'
+assert_eq "$(jq -c .args <<<"$resolver_out")" \
+    '["--model","another-example-model","--effort","high"]' 'selected args'
+assert_eq "$(jq -r .implementation <<<"$resolver_out")" reasoning 'selected identity'
+assert_eq "$(jq -r .label <<<"$resolver_out")" reasoning 'selected label'
+assert_eq "$(jq -r .session <<<"$resolver_out")" custom-session 'selected session inherited'
+assert_eq "$(jq -r .worklog_root <<<"$resolver_out")" /absolute/worklog/root 'selected worklog inherited'
+
+# Unknown names, and combining --list with --implementation, are errors.
+run_resolver "$named" '' '' '' --implementation does-not-exist
+[[ "$resolver_status" -ne 0 ]] || fail 'unknown implementation was accepted'
+grep -F 'unknown implementation' "$test_root/stderr" >/dev/null ||
+    fail 'unknown implementation reason is unclear'
+run_resolver "$named" '' '' '' --list --implementation fast-code
+[[ "$resolver_status" -ne 0 ]] || fail '--list and --implementation were combined'
+
+# A registry-only config lists and selects, but has no default to resolve.
+registry="$test_root/registry.toml"
+write_config "$registry" \
+    '[implementations.only]' \
+    'kind = "only-kind"' \
+    'args = ["--only"]'
+run_resolver "$registry" '' '' '' --list
+[[ "$resolver_status" -eq 0 ]] || fail 'registry-only --list failed'
+assert_eq "$(jq -r .default <<<"$resolver_out")" null 'registry-only has no default'
+assert_eq "$(jq -r '.implementations | length' <<<"$resolver_out")" 1 'registry-only count'
+run_resolver "$registry" '' '' '' --implementation only
+[[ "$resolver_status" -eq 0 ]] || fail 'registry-only selection failed'
+assert_eq "$(jq -r .kind <<<"$resolver_out")" only-kind 'registry-only selected kind'
+run_resolver "$registry" '' '' ''
+[[ "$resolver_status" -ne 0 ]] || fail 'registry-only default resolution succeeded'
+grep -F 'no default implementation' "$test_root/stderr" >/dev/null ||
+    fail 'missing-default reason is unclear'
+
+# A legacy inline-only config lists zero named entries and keeps resolving.
+run_resolver "$explicit" '' '' '' --list
+[[ "$resolver_status" -eq 0 ]] || fail 'legacy --list failed'
+assert_eq "$(jq -r .default <<<"$resolver_out")" null 'legacy inline default is null in list'
+assert_eq "$(jq -r '.implementations | length' <<<"$resolver_out")" 0 'legacy lists no candidates'
+run_resolver "$explicit" '' '' ''
+[[ "$resolver_status" -eq 0 ]] || fail 'legacy default resolution failed'
+assert_eq "$(jq -r .kind <<<"$resolver_out")" explicit-kind 'legacy inline kind'
+assert_eq "$(jq -c .args <<<"$resolver_out")" '["--one"]' 'legacy inline args'
+assert_eq "$(jq -r .implementation <<<"$resolver_out")" null 'legacy identity is null'
+assert_eq "$(jq -r .label <<<"$resolver_out")" null 'legacy label is null'
+
+# A config with neither section is invalid for both list and resolution, so it
+# is covered by the malformed-config loop below (empty file and unrelated
+# section only). Malformed or ambiguous candidates and defaults fail for both
+# list and resolution, with an explicit reason and no traceback.
+for bad_case in \
+    'empty-file.toml|' \
+    'no-impl-other.toml|[other]\nkind = "k"' \
+    'impl-empty.toml|[implementation]' \
+    'impl-mixed.toml|[implementation]\nname = "x"\nkind = "k"\nargs = []\n[implementations.x]\nkind = "k2"\nargs = []' \
+    'impl-unknown.toml|[implementation]\nname = "missing"' \
+    'impl-blank-name.toml|[implementation]\nname = "  "\n[implementations.x]\nkind = "k"\nargs = []' \
+    'candidate-blank-name.toml|[implementations."  "]\nkind = "k"\nargs = []' \
+    'candidate-empty-label.toml|[implementations.x]\nlabel = ""\nkind = "k"\nargs = []' \
+    'candidate-blank-kind.toml|[implementations.x]\nkind = "  "\nargs = []' \
+    'candidate-bad-args.toml|[implementations.x]\nkind = "k"\nargs = [1, "two"]' \
+    'impl-not-table.toml|implementation = "x"' \
+    'impls-not-table.toml|implementations = "x"' \
+    'candidate-not-table.toml|[implementations]\nx = "y"'; do
+    name="${bad_case%%|*}"
+    body="${bad_case#*|}"
+    path="$test_root/$name"
+    printf '%b\n' "$body" >"$path"
+    run_resolver "$path" '' '' ''
+    [[ "$resolver_status" -ne 0 ]] || fail "bad config was accepted on resolve: $name"
+    run_resolver "$path" '' '' '' --list
+    [[ "$resolver_status" -ne 0 ]] || fail "bad config was accepted on list: $name"
+    if grep -F 'Traceback' "$test_root/stderr" >/dev/null; then
+        fail "bad config produced a traceback: $name"
+    fi
+done
+
+# Argument strings round-trip as opaque data, in order, including spaces,
+# quotes, dollar signs, tabs, newlines and an empty argument.
+arguments="$test_root/arguments.toml"
+write_config "$arguments" \
+    '[implementations.tricky]' \
+    'kind = "unknown-kind-xyz"' \
+    'args = ["two words", "quote\"and${dollar}", "line1\nline2", "tab\there", ""]'
+run_resolver "$arguments" '' '' '' --implementation tricky
+[[ "$resolver_status" -eq 0 ]] || fail "argument preservation failed: $(cat "$test_root/stderr")"
+assert_eq "$(jq -c .args <<<"$resolver_out")" \
+    '["two words","quote\"and${dollar}","line1\nline2","tab\there",""]' \
+    'special arguments did not round-trip as data'
 
 printf 'ok - order config resolver tests passed\n'

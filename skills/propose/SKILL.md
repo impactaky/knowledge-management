@@ -40,6 +40,6 @@ description: 設計を一問一答せず、調べた全体案と確認項目で�
 ## Verification           ← 実行するtest・checkと確認方法
 ```
 
-`実装案`と`仮定したこと`から実装と完了判定に必要な背景、制約、確定した判断をorder文書へ含める。会話履歴のない実装Agentがこの一文書だけで実装と完了判定をできる状態にする。実装者の明示指定、order skill所有のconfig（対象実装repositoryには依存しない）の優先順位とsnapshot記録は`order`に従い、選択元、`kind`、順序を保った引数、configから解決した場合はconfigの絶対pathを`実装対象`へ記録する。
+`実装案`と`仮定したこと`から実装と完了判定に必要な背景、制約、確定した判断をorder文書へ含める。会話履歴のない実装Agentがこの一文書だけで実装と完了判定をできる状態にする。実装者の明示指定、order skill所有のconfig（対象実装repositoryには依存しない）の優先順位とsnapshot記録は`order`に従い、利用者がmodelやCLIを名前で示した場合は`resolve-config.py --list`の設定済み候補を一意に照合して`--implementation`で選択する。`実装対象`へは選択元、configから選択した候補名と`label`（inline既定では`null`）、`kind`、順序を保った引数、configから解決した場合はconfigの絶対pathを記録する。
 
 `order` skillの「Herdr sessionでfreshな実装Agentを起動する」以降をそのまま実行し、手順を複製しない。接続条件は依頼元がHerdr pane内かどうかではなく、名前付きdaemonへの到達性で判断する。確定した設計文を`order_path`の同じ文書として唯一の実装仕様にし、Herdrへはその本文を埋め込んで渡す。Background terminalでの待機・回収、未検収orderの扱い、同じAgentへの差し戻し、合格後も`order.md`を残す扱いも`order`に従う。検収は応答Agentの報告だけで合格にせず、開始commitからの全commit、完全なtask diff、test結果、未commit変更を検査する。

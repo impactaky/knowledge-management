@@ -120,13 +120,21 @@ For systemd deployment, use the template at `foundation/tools/knowledge-ui/knowl
 The `propose`, `order` and `agent-exchange` skills are portable. They read user
 configuration from outside this checkout and never from a committed real config.
 
-`order` selects the implementation agent as `[implementation] kind` and ordered
-`args`. The config path is an explicit `ORDER_CONFIG`, then
-`${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/order.toml`. The skill's
-`scripts/resolve-config.py` validates the file and prints a JSON snapshot. A
-missing or invalid config stops the order before any agent starts; there is no
-built-in kind or model. An order-level explicit selection overrides the config
-for that order only. See [order config example](../skills/order/config.example.toml).
+`order` selects the implementation agent from its own config. The config path is
+an explicit `ORDER_CONFIG`, then
+`${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/order.toml`. The default
+is `[implementation]`, either inline `kind` and ordered `args`, or a `name`
+reference to a `[implementations.<name>]` entry that declares a `label`, `kind`
+and `args`. Named entries are the user's configured choices, not a provider's
+live available-model list; the resolver never queries a provider or launches an
+agent. The skill's `scripts/resolve-config.py` validates the whole file and
+prints a JSON snapshot, with `--list` for deterministic discovery and
+`--implementation NAME` to select one candidate for a single order (the two are
+mutually exclusive). A missing or invalid config, an unknown name, or an
+ambiguous default stops the order before any agent starts; there is no built-in
+kind or model and no fallback to another candidate. An order-level explicit
+`kind`/native-args pair overrides the entire selection for that order only. See
+[order config example](../skills/order/config.example.toml).
 
 Agent Exchange separates two user files with different purposes:
 

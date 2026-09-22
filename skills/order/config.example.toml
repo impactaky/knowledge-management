@@ -8,10 +8,36 @@
 # There is no built-in kind or model. If an order does not specify an
 # implementation explicitly, a valid config is required or the order stops
 # before starting any agent.
+#
+# [implementation] defines the default for orders that select nothing. It is
+# either a name reference to a configured candidate (recommended, below) or its
+# own inline kind/args (legacy, commented at the end). Do not mix the two forms.
+#
+# [implementations.<name>] entries are this user's configured choices. They are
+# not a provider's live available-model list and the resolver never queries a
+# provider or launches an agent. Unknown kinds and opaque model identifiers are
+# passed through unchanged, in order.
 
 [implementation]
-kind = "example-kind"
-args = ["--example-native-arg", "value"]
+name = "fast-code"
+
+[implementations.fast-code]
+label = "Example fast coding model"
+kind = "example-cli"
+args = ["--model", "example-model"]
+
+[implementations.reasoning]
+kind = "another-cli"
+args = ["--model", "another-example-model", "--effort", "high"]
+
+# Discover configured choices and select one for a single order:
+#
+#   python3 scripts/resolve-config.py --config <this file> --list
+#   python3 scripts/resolve-config.py --config <this file> --implementation reasoning
+#
+# --list and --implementation are mutually exclusive. A missing or invalid
+# config, an unknown name, or an ambiguous default stops the order; there is no
+# fallback to another candidate.
 
 # Optional Herdr session that hosts the implementation agent. Defaults to
 # "agent-exchange" when omitted.
@@ -23,3 +49,11 @@ session = "agent-exchange"
 # directory. There is no implicit private default.
 # [worklog]
 # root = "/absolute/path/to/worklog/root"
+
+# Legacy compatibility: an inline default still resolves with its prior fields,
+# lists zero named entries, and reports a null implementation name and label.
+# Use it in place of the named [implementation] above, never together with it.
+#
+# [implementation]
+# kind = "example-kind"
+# args = ["--example-native-arg", "value"]
