@@ -122,18 +122,22 @@ configuration from outside this checkout and never from a committed real config.
 
 `order` selects the implementation agent from its own config. The config path is
 an explicit `ORDER_CONFIG`, then
-`${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/order.toml`. The default
-is `[implementation]`, either inline `kind` and ordered `args`, or a `name`
-reference to a `[implementations.<name>]` entry that declares a `label`, `kind`
-and `args`. Named entries are the user's configured choices, not a provider's
-live available-model list; the resolver never queries a provider or launches an
-agent. The skill's `scripts/resolve-config.py` validates the whole file and
-prints a JSON snapshot, with `--list` for deterministic discovery and
+`${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/order.toml`. The
+selection priority is an explicit order-level `kind`/native-args override (which
+needs no config), then a candidate requested by name, then the configured
+default. The default is `[implementation]`, either inline `kind` and ordered
+`args`, or a `name` reference to a `[implementations.<name>]` entry. Each named
+entry uses a non-blank, whitespace-free TOML key as its name and declares a
+non-empty `kind`, ordered string `args`, and an optional non-empty `label`
+(defaulting to the name). Named entries are the user's configured choices, not a
+provider's live available-model list; the resolver never queries a provider or
+launches an agent. The skill's `scripts/resolve-config.py` validates the whole
+file and prints a JSON snapshot, with `--list` for deterministic discovery and
 `--implementation NAME` to select one candidate for a single order (the two are
-mutually exclusive). A missing or invalid config, an unknown name, or an
-ambiguous default stops the order before any agent starts; there is no built-in
-kind or model and no fallback to another candidate. An order-level explicit
-`kind`/native-args pair overrides the entire selection for that order only. See
+mutually exclusive). A registry-only config without a default still lists and
+selects, while default resolution, a missing or invalid config, an unknown name
+and an ambiguous default stop the order before any agent starts. There is no
+built-in kind or model and no fallback to another candidate. See
 [order config example](../skills/order/config.example.toml).
 
 Agent Exchange separates two user files with different purposes:

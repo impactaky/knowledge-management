@@ -58,10 +58,11 @@ Delivery Coordinationの語彙（Proposal、Design Confirmation、Implementation
 
 order開始時に実装者とnative引数を一度だけ解決し、結果をContextへsnapshotとして記録する。以後は記録済みの`kind`と引数を使い、進行中のconfig変更を反映しない。選択の優先順位は次のとおり。
 
-1. 当該orderで利用者が明示した`kind`とnative引数の組。明示指定は組全体を一回限りで置き換え、`kind`だけを指定した場合は引数を空とし、別kindのconfig引数を持ち越さない。明示指定はdefaultではなく一回限りの上書きであるため、configがなくても明示指定した値を使える。
-2. 明示指定がない場合の既定値は、必ずorder skill所有のconfigから読む。configの所在は明示的な`ORDER_CONFIG`、次に`${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/order.toml`の順で解決し、対象実装repositoryには依存しない。`kind`はHerdrへ渡すkind、`args`は順序を保った文字列配列。configが存在しない場合は起動前にblockerとして停止し、skill本文の既定値へ戻さない。雛形は同じdirectoryの`config.example.toml`に置き、実利用configはrepositoryへcommitしない。
+1. 当該orderで利用者が明示した`kind`とnative引数の組。明示指定は組全体を一回限りで置き換え、`kind`だけを指定した場合は引数を空とし、別kindのconfig引数を持ち越さない。明示指定はdefaultではなく一回限りの上書きであり、configの参照も検証も要求しない（configがなくても明示指定した値を使える）。
+2. 明示指定がなく、利用者がmodelやCLIを名前で示した場合は、設定済み候補から名前で選ぶ。`resolve-config.py --list`で候補を列挙し、要求された名前・modelを一意な候補へ照合して`--implementation <name>`で解決する。`--list`と`--implementation`は同時に使わない。一意に照合できないときはnative引数を推測せず、候補も黙って選ばず、親sessionで利用者へ確認する。`--list`はproviderへ問い合わせずagentも起動しない。この経路は既定の有無に依存せず、`[implementations]`だけのconfigでも列挙と明示選択ができる。
+3. どの候補も名前で要求されていない場合は、configの既定`[implementation]`を使う。configの所在は明示的な`ORDER_CONFIG`、次に`${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/order.toml`の順で解決し、対象実装repositoryには依存しない。`kind`はHerdrへ渡すkind、`args`は順序を保った文字列配列。configが存在しない場合、または既定が定義されていない場合は、既定解決として起動前にblockerとして停止し、skill本文の既定値へ戻さない。雛形は同じdirectoryの`config.example.toml`に置き、実利用configはrepositoryへcommitしない。
 
-configは既定の`[implementation]`と、任意の名前付き候補`[implementations.<name>]`を持つ。`[implementation]`の既定はinlineの`kind`/`args`か、`[implementations.<name>]`を指す`name`参照のどちらか一方だけにする。両方を書いた混在、存在しない`name`、空の名前・`label`・`kind`、文字列配列でない`args`は起動前にblockerとして停止する。候補は利用者が設定した実装の選択肢であり、providerが持つ利用可能model一覧でも、order組み込みの候補でもない。未知の`kind`やnative model識別子もそのまま渡す。
+configは既定の`[implementation]`と、任意の名前付き候補`[implementations.<name>]`を持つ。候補の名前は空でなく空白を含まないTOMLキー。`label`は任意の非空文字列で、省略すると名前を既定値にする。`kind`は非空文字列、`args`は順序を保った文字列配列。`[implementation]`の既定はinlineの`kind`/`args`か、`[implementations.<name>]`を指す`name`参照のどちらか一方だけにする。両方を書いた混在、存在しない`name`、空の名前・`label`・`kind`、文字列配列でない`args`は起動前にblockerとして停止する。inline既定と名前付き候補は共存でき、その場合も`--list`は候補を返し、`--implementation`はinline既定を上書きする。候補は利用者が設定した実装の選択肢であり、providerが持つ利用可能model一覧でも、order組み込みの候補でもない。未知の`kind`やnative model識別子もそのまま渡す。
 
 ```toml
 [implementation]
@@ -77,9 +78,7 @@ kind = "another-cli"
 args = ["--model", "another-example-model", "--effort", "high"]
 ```
 
-利用者がmodelやCLIを名前で示したときは、`resolve-config.py --list`で設定済み候補を列挙し、要求された名前・modelを一意な候補へ照合してから`--implementation <name>`で解決する。`--list`と`--implementation`は同時に使わない。一意に照合できないときはnative引数を推測せず、候補も黙って選ばず、親sessionで利用者へ確認する。`--list`はproviderへ問い合わせずagentも起動しない。
-
-解決とschema検証は、このSKILL.mdと同じdirectoryの`scripts/resolve-config.py`を実行して一貫して行い、機械可読なsnapshotを得る。`kind`が空でない文字列であること、`args`が文字列配列であることを検証する。configが存在しない、または存在して不正なTOML、`[implementation]`も`[implementations]`もない、既定の欠落、混在した既定形式、存在しない既定参照、不正な候補表、空の名前・`label`・`kind`、文字列配列でない`args`のいずれかである場合は、起動前にblockerとして停止する。`--implementation`で指定した名前が存在しない場合もblockerとして停止し、既定や別候補へfallbackしない。選択がない場合は設定済みの既定を使い、既定がなければ起動前に停止する。`kind`がHerdrと対象CLIに受理されるかの判断はHerdrとCLIを正とし、orderはkind候補の固定リストを持たない。modelやreasoning effortの意味もorderは解釈せず、利用者がnative引数で指定した値だけを渡す。
+解決とschema検証は、このSKILL.mdと同じdirectoryの`scripts/resolve-config.py`を実行して一貫して行い、機械可読なsnapshotを得る。全操作で全ての候補と既定を検証し、`kind`が空でない文字列であること、`args`が文字列配列であることを確認する。configが存在しない、または存在して不正なTOML、`[implementation]`も`[implementations]`もない、混在した既定形式、存在しない既定参照、不正な候補表、空の名前・`label`・`kind`、文字列配列でない`args`のいずれかである場合は、起動前にblockerとして停止する。ただし`[implementations]`があり既定だけがないconfigは、列挙と明示選択が成功し、既定解決だけが「既定がない」としてblockerになる。`--implementation`で指定した名前が存在しない場合もblockerとして停止し、既定や別候補へfallbackしない。`kind`がHerdrと対象CLIに受理されるかの判断はHerdrとCLIを正とし、orderはkind候補の固定リストを持たない。modelやreasoning effortの意味もorderは解釈せず、利用者がnative引数で指定した値だけを渡す。
 
 Contextへは選択元（明示指定 / config）と、configから解決した場合は選択した候補名`implementation`と`label`、解決した`kind`、順序を保った引数配列、解決したconfigの絶対pathを記録する。inline既定を使った場合は`implementation`と`label`を`null`として記録する。選択はorder開始時に凍結し、進行中のconfig変更を反映しない。
 

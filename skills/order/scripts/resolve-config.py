@@ -119,7 +119,7 @@ def load(path: Path) -> dict:
 
     candidates = parse_candidates(data)
     default = parse_default(data, candidates)
-    if default is None and not candidates:
+    if "implementation" not in data and "implementations" not in data:
         raise ConfigError(
             f"config at {path} must define [implementation] or [implementations]"
         )

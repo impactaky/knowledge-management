@@ -205,6 +205,24 @@ run_resolver "$registry" '' '' ''
 grep -F 'no default implementation' "$test_root/stderr" >/dev/null ||
     fail 'missing-default reason is unclear'
 
+# An explicitly empty registry is structurally valid: it lists no entries and
+# no default, select fails as unknown, and only default resolution reports the
+# missing default.
+empty_registry="$test_root/empty-registry.toml"
+write_config "$empty_registry" '[implementations]'
+run_resolver "$empty_registry" '' '' '' --list
+[[ "$resolver_status" -eq 0 ]] || fail "empty registry --list failed: $(cat "$test_root/stderr")"
+assert_eq "$(jq -r .default <<<"$resolver_out")" null 'empty registry has no default'
+assert_eq "$(jq -c .implementations <<<"$resolver_out")" '[]' 'empty registry lists no entries'
+run_resolver "$empty_registry" '' '' '' --implementation only
+[[ "$resolver_status" -ne 0 ]] || fail 'empty registry accepted a name selection'
+grep -F 'unknown implementation' "$test_root/stderr" >/dev/null ||
+    fail 'empty registry unknown-name reason is unclear'
+run_resolver "$empty_registry" '' '' ''
+[[ "$resolver_status" -ne 0 ]] || fail 'empty registry default resolution succeeded'
+grep -F 'no default implementation' "$test_root/stderr" >/dev/null ||
+    fail 'empty registry missing-default reason is unclear'
+
 # A legacy inline-only config lists zero named entries and keeps resolving.
 run_resolver "$explicit" '' '' '' --list
 [[ "$resolver_status" -eq 0 ]] || fail 'legacy --list failed'
@@ -216,6 +234,34 @@ assert_eq "$(jq -r .kind <<<"$resolver_out")" explicit-kind 'legacy inline kind'
 assert_eq "$(jq -c .args <<<"$resolver_out")" '["--one"]' 'legacy inline args'
 assert_eq "$(jq -r .implementation <<<"$resolver_out")" null 'legacy identity is null'
 assert_eq "$(jq -r .label <<<"$resolver_out")" null 'legacy label is null'
+
+# An inline default can coexist with named candidates: list still returns the
+# candidates, the default resolves inline, and explicit selection overrides it.
+combo="$test_root/combo.toml"
+write_config "$combo" \
+    '[implementation]' \
+    'kind = "inline-kind"' \
+    'args = ["--inline"]' \
+    '[implementations.extra]' \
+    'label = "Example extra model"' \
+    'kind = "extra-cli"' \
+    'args = ["--extra", "value"]'
+run_resolver "$combo" '' '' '' --list
+[[ "$resolver_status" -eq 0 ]] || fail "combo --list failed: $(cat "$test_root/stderr")"
+assert_eq "$(jq -r .default <<<"$resolver_out")" null 'combo inline default is null in list'
+assert_eq "$(jq -r '.implementations | length' <<<"$resolver_out")" 1 'combo lists candidates'
+assert_eq "$(jq -r '.implementations[0].name' <<<"$resolver_out")" extra 'combo candidate name'
+run_resolver "$combo" '' '' ''
+[[ "$resolver_status" -eq 0 ]] || fail 'combo default resolution failed'
+assert_eq "$(jq -r .kind <<<"$resolver_out")" inline-kind 'combo inline kind'
+assert_eq "$(jq -c .args <<<"$resolver_out")" '["--inline"]' 'combo inline args'
+assert_eq "$(jq -r .implementation <<<"$resolver_out")" null 'combo inline identity is null'
+run_resolver "$combo" '' '' '' --implementation extra
+[[ "$resolver_status" -eq 0 ]] || fail 'combo selection failed'
+assert_eq "$(jq -r .kind <<<"$resolver_out")" extra-cli 'combo selected kind'
+assert_eq "$(jq -c .args <<<"$resolver_out")" '["--extra","value"]' 'combo selected args'
+assert_eq "$(jq -r .implementation <<<"$resolver_out")" extra 'combo selected identity'
+assert_eq "$(jq -r .label <<<"$resolver_out")" 'Example extra model' 'combo selected label'
 
 # A config with neither section is invalid for both list and resolution, so it
 # is covered by the malformed-config loop below (empty file and unrelated
@@ -251,12 +297,16 @@ done
 # Argument strings round-trip as opaque data, in order, including spaces,
 # quotes, dollar signs, tabs, newlines and an empty argument.
 arguments="$test_root/arguments.toml"
+# The literal "${dollar}" below is fixture data, not a shell expansion.
+# shellcheck disable=SC2016
 write_config "$arguments" \
     '[implementations.tricky]' \
     'kind = "unknown-kind-xyz"' \
     'args = ["two words", "quote\"and${dollar}", "line1\nline2", "tab\there", ""]'
 run_resolver "$arguments" '' '' '' --implementation tricky
 [[ "$resolver_status" -eq 0 ]] || fail "argument preservation failed: $(cat "$test_root/stderr")"
+# The literal "${dollar}" below is expected JSON data, not a shell expansion.
+# shellcheck disable=SC2016
 assert_eq "$(jq -c .args <<<"$resolver_out")" \
     '["two words","quote\"and${dollar}","line1\nline2","tab\there",""]' \
     'special arguments did not round-trip as data'

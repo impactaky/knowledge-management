@@ -11,7 +11,8 @@
 #
 # [implementation] defines the default for orders that select nothing. It is
 # either a name reference to a configured candidate (recommended, below) or its
-# own inline kind/args (legacy, commented at the end). Do not mix the two forms.
+# own inline kind/args (legacy, commented at the end). Do not mix the two
+# default forms at once.
 #
 # [implementations.<name>] entries are this user's configured choices. They are
 # not a provider's live available-model list and the resolver never queries a
@@ -50,9 +51,12 @@ session = "agent-exchange"
 # [worklog]
 # root = "/absolute/path/to/worklog/root"
 
-# Legacy compatibility: an inline default still resolves with its prior fields,
-# lists zero named entries, and reports a null implementation name and label.
-# Use it in place of the named [implementation] above, never together with it.
+# Legacy compatibility: an inline default resolves with its prior fields and
+# reports a null implementation name and label. It can coexist with the
+# [implementations.*] candidates above: --list still returns those candidates,
+# and --implementation still overrides the inline default. Only an inline-only
+# config with no candidates lists zero entries. Do not declare both default
+# forms at once.
 #
 # [implementation]
 # kind = "example-kind"
