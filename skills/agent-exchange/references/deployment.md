@@ -82,6 +82,18 @@ never guesses for unknown kinds:
 
 - `codex`: appends `--add-dir <Exchange Directory>` so the responder can reach
   the exchange while sandboxed.
+- `claude` (Claude Code): appends `--add-dir <Exchange Directory>`, preserving
+  the configured permission mode and sandbox settings. Additional directories
+  follow the same permission rules as the working directory; see
+  [Claude Code Permissions](https://code.claude.com/docs/en/permissions#working-directories).
+- `cursor` (Cursor Agent): appends
+  `--add-dir <Exchange Directory> --sandbox enabled`. Requires a Cursor Agent
+  CLI that supports both flags. Herdr selects the Agent command; do not add an
+  extra `agent` to the native args. Check the installed Agent CLI's `--help`
+  for `--add-dir` support and the
+  [CLI Parameters](https://cursor.com/docs/cli/reference/parameters) for sandbox
+  and permission options. An unsupported required option is a startup failure,
+  never a reason to disable the sandbox or fall back to another kind.
 - `agy`: appends `--add-dir <Exchange Directory> --mode accept-edits --sandbox`.
 - `opencode`: exports a session-only `OPENCODE_CONFIG_CONTENT` into the agent
   pane that grants `permission.external_directory` `"allow"` for the Exchange
@@ -90,8 +102,17 @@ never guesses for unknown kinds:
 - Unknown kinds receive the configured args unchanged.
 
 Permission-bypass and conflicting safety arguments are refused before any agent
-starts: `--dangerously-skip-permissions` for any kind, `--mode` for `agy`, and
-`--auto` for `opencode`.
+starts:
+
+- All kinds: `--dangerously-skip-permissions`.
+- `claude`: `--allow-dangerously-skip-permissions` and
+  `--permission-mode bypassPermissions` (also `--permission-mode=bypassPermissions`).
+  Other permission modes remain unchanged.
+- `cursor`: `--force` / `-f` / `--yolo`, and any `--sandbox` value other than
+  `enabled`, including a missing value. Both `--sandbox enabled` and
+  `--sandbox=enabled` are compatible with the required sandbox setting.
+- `agy`: `--mode`.
+- `opencode`: `--auto`.
 
 ## Unit path safety
 

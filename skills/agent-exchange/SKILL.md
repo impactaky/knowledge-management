@@ -88,7 +88,14 @@ kind = "<herdr kind>"
 args = ["<native arg>", "..."]
 ```
 
-config欠落、不正TOML、`[implementation]`欠落、空の`kind`、文字列配列でない`args`は、いずれもAgent起動前に明示エラーになる。`kind`候補の固定リストは持たず、未知のkindもnative引数の順序をそのまま保ってHerdrへ渡す。既知kindでは応答AgentがExchange Directoryへ到達できるよう、利用者引数の順序を保ったまま必要な準備を補う: `codex`は`--add-dir <Exchange Directory>`、`agy`は`--add-dir <Exchange Directory> --mode accept-edits --sandbox`、`opencode`は起動paneへsession-onlyの`OPENCODE_CONFIG_CONTENT`としてExchange Directoryとその配下の`external_directory`許可をmergeしてexportする。`--dangerously-skip-permissions`（全kind）、`agy`の`--mode`、`opencode`の`--auto`は安全を打ち消すため起動前に拒否する。未知kindでは専用準備を推測しない。応答Agentをin-repoの既定modelや別kindへ自動fallbackしない。実利用configはrepositoryへcommitせず、[config.example.toml](../config.example.toml)を雛形にする。
+config欠落、不正TOML、`[implementation]`欠落、空の`kind`、文字列配列でない`args`は、いずれもAgent起動前に明示エラーになる。`kind`候補の固定リストは持たず、未知のkindもnative引数の順序をそのまま保ってHerdrへ渡す。既知kindでは応答AgentがExchange Directoryへ到達できるよう、利用者引数の順序を保ったまま次を補う。
+
+- `codex` / `claude`（Claude Code）: `--add-dir <Exchange Directory>`。Claude Codeのpermission modeとsandboxは利用者の設定を引き継ぐ。
+- `cursor`（Cursor Agent）: `--add-dir <Exchange Directory> --sandbox enabled`。両optionに対応するCLIを使い、native引数に`agent`を重ねない。
+- `agy`: `--add-dir <Exchange Directory> --mode accept-edits --sandbox`。
+- `opencode`: 起動paneへsession-onlyの`OPENCODE_CONFIG_CONTENT`としてExchange Directoryとその配下の`external_directory`許可をmergeしてexportする。
+
+`--dangerously-skip-permissions`（全kind）、`claude`の`--allow-dangerously-skip-permissions`と`--permission-mode bypassPermissions`、`cursor`の`--force` / `-f` / `--yolo`と`enabled`以外の`--sandbox`、`agy`の`--mode`、`opencode`の`--auto`は起動前に拒否する。Claude CodeとCursorでは`=`形式の指定も検証し、Cursorの既存の`--sandbox enabled`は受理する。kind別の根拠と必要CLIは[deployment reference](references/deployment.md#known-kind-preparation)を参照する。未知kindでは専用準備を推測しない。必須optionをCLIが受理しない場合も起動失敗として扱い、in-repoの既定modelや別kindへ自動fallbackしない。実利用configはrepositoryへcommitせず、[config.example.toml](config.example.toml)を雛形にする。
 
 新規Requestでは次の順で進む。
 

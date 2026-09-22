@@ -8,7 +8,7 @@ TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_DIR="$(cd -- "$TEST_DIR/../scripts" && pwd)"
 test_root="$(mktemp -d)"
 repository="$test_root/repository"
-exchange_root="$test_root/exchange"
+exchange_root="$test_root/exchange with spaces"
 fake_bin="$test_root/bin"
 fake_state="$test_root/fake-state"
 fake_log="$test_root/herdr.log"
@@ -76,6 +76,38 @@ run_launcher "$codex_config"
 assert_kind codex
 assert_agent_tail --model cx --add-dir "$exchange_root"
 
+# Claude keeps the selected model and permission mode, and adds exchange access.
+# A user-supplied additional directory must remain an independent argv element.
+claude_config="$test_root/claude.toml"
+printf '[implementation]\nkind = "claude"\nargs = ["--model", "cl", "--permission-mode", "acceptEdits", "--add-dir", "/tmp/extra context"]\n' >"$claude_config"
+publish_request >/dev/null
+run_launcher "$claude_config"
+assert_kind claude
+assert_agent_tail --model cl --permission-mode acceptEdits --add-dir '/tmp/extra context' --add-dir "$exchange_root"
+
+# The equals form of a non-bypass permission mode is also passed through.
+printf '[implementation]\nkind = "claude"\nargs = ["--permission-mode=auto"]\n' >"$claude_config"
+publish_request >/dev/null
+run_launcher "$claude_config"
+assert_agent_tail --permission-mode=auto --add-dir "$exchange_root"
+
+# Cursor adds exchange access and explicitly enables its sandbox without force.
+cursor_config="$test_root/cursor.toml"
+printf '[implementation]\nkind = "cursor"\nargs = ["--model", "cu", "--auto-review"]\n' >"$cursor_config"
+publish_request >/dev/null
+run_launcher "$cursor_config"
+assert_kind cursor
+assert_agent_tail --model cu --auto-review --add-dir "$exchange_root" --sandbox enabled
+
+# An already-enabled sandbox is compatible in either native option form.
+for args in '["--sandbox", "enabled"]' '["--sandbox=enabled"]'; do
+    printf '[implementation]\nkind = "cursor"\nargs = %s\n' "$args" >"$cursor_config"
+    publish_request >/dev/null
+    run_launcher "$cursor_config"
+    mapfile -t expected_args < <(jq -r '.[]' <<<"$args")
+    assert_agent_tail "${expected_args[@]}" --add-dir "$exchange_root" --sandbox enabled
+done
+
 # agy appends the required sandbox arguments after the ordered user args.
 agy_config="$test_root/agy.toml"
 printf '[implementation]\nkind = "agy"\nargs = ["--user-flag"]\n' >"$agy_config"
@@ -118,6 +150,20 @@ assert_agent_tail --x y
 # Permission-bypass and conflicting safety args stop the Launcher before start.
 for bad_case in \
     'codex|["--dangerously-skip-permissions"]' \
+    'claude|["--dangerously-skip-permissions"]' \
+    'claude|["--dangerously-skip-permissions=true"]' \
+    'claude|["--allow-dangerously-skip-permissions"]' \
+    'claude|["--permission-mode", "bypassPermissions"]' \
+    'claude|["--permission-mode=bypassPermissions"]' \
+    'cursor|["--force"]' \
+    'cursor|["-f"]' \
+    'cursor|["--yolo"]' \
+    'cursor|["--force=true"]' \
+    'cursor|["--yolo=true"]' \
+    'cursor|["--sandbox", "disabled"]' \
+    'cursor|["--sandbox=disabled"]' \
+    'cursor|["--sandbox"]' \
+    'cursor|["--sandbox", "invalid"]' \
     'agy|["--mode", "plan"]' \
     'agy|["--dangerously-skip-permissions"]' \
     'opencode|["--auto"]'; do

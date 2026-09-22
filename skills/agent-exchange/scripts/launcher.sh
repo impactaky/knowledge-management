@@ -50,16 +50,60 @@ herdr() {
 # Reject permission-bypass and conflicting safety arguments before any agent is
 # started, so a misconfigured kind cannot silently weaken its sandbox.
 validate_user_args() {
-    local arg
+    local arg i value
     for arg in "${agent_user_args[@]}"; do
         case "$arg" in
-            --dangerously-skip-permissions)
+            --dangerously-skip-permissions | --dangerously-skip-permissions=*)
                 printf 'refusing permission-bypass argument for kind %s: %s\n' "$agent_kind" "$arg" >&2
                 return 1
                 ;;
         esac
     done
     case "$agent_kind" in
+        claude)
+            for i in "${!agent_user_args[@]}"; do
+                arg="${agent_user_args[i]}"
+                case "$arg" in
+                    --allow-dangerously-skip-permissions | --allow-dangerously-skip-permissions=*)
+                        printf 'refusing permission-bypass argument for kind claude: %s\n' "$arg" >&2
+                        return 1
+                        ;;
+                    --permission-mode | --permission-mode=*)
+                        if [[ "$arg" == --permission-mode ]]; then
+                            value="${agent_user_args[i+1]:-}"
+                        else
+                            value="${arg#*=}"
+                        fi
+                        if [[ "$value" == bypassPermissions ]]; then
+                            printf 'refusing permission-bypass mode for kind claude: %s\n' "$value" >&2
+                            return 1
+                        fi
+                        ;;
+                esac
+            done
+            ;;
+        cursor)
+            for i in "${!agent_user_args[@]}"; do
+                arg="${agent_user_args[i]}"
+                case "$arg" in
+                    -f | --force | --force=* | --yolo | --yolo=*)
+                        printf 'refusing permission-bypass argument for kind cursor: %s\n' "$arg" >&2
+                        return 1
+                        ;;
+                    --sandbox | --sandbox=*)
+                        if [[ "$arg" == --sandbox ]]; then
+                            value="${agent_user_args[i+1]:-}"
+                        else
+                            value="${arg#*=}"
+                        fi
+                        if [[ "$value" != enabled ]]; then
+                            printf 'refusing conflicting --sandbox for cursor; enabled is required\n' >&2
+                            return 1
+                        fi
+                        ;;
+                esac
+            done
+            ;;
         agy)
             for arg in "${agent_user_args[@]}"; do
                 case "$arg" in
@@ -92,8 +136,11 @@ build_agent_args() {
     # kinds are passed straight to Herdr without guessing kind-specific
     # preparation.
     case "$agent_kind" in
-        codex)
+        codex | claude)
             agent_final_args=("${agent_user_args[@]}" --add-dir "$root")
+            ;;
+        cursor)
+            agent_final_args=("${agent_user_args[@]}" --add-dir "$root" --sandbox enabled)
             ;;
         agy)
             agent_final_args=("${agent_user_args[@]}" --add-dir "$root" --mode accept-edits --sandbox)
