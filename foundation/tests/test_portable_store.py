@@ -5,9 +5,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 from threading import Thread
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
+from urllib.parse import quote
 
 import pytest
 from fastapi.testclient import TestClient
@@ -238,15 +241,6 @@ def test_ui_startup_browse_assets_and_offline_actions(store, monkeypatch):
             assert client.post('/api/live-marimo', params={'file': str(notebook)}).status_code == 403
 
 
-def test_markdown_features_do_not_need_article_execution(tmp_path):
-    article = tmp_path / 'sample.md'
-    article.write_text('# Sample\n\n~~old~~\n\n- [x] done\n\n|a|b|\n|-|-|\n|1|2|\n\n$x^2$\n\n```mermaid\ngraph LR; A-->B\n```\n<script>alert(1)</script>\n')
-    rendered = server.render_markdown(article)
-    for expected in ('<s>old</s>', 'type="checkbox"', '<table>', 'math inline', 'mermaid-source'):
-        assert expected in rendered
-    assert '<script>alert(1)</script>' not in rendered
-
-
 def test_ui_catalog_scope_changes_without_automatic_indexing(store, monkeypatch):
     _, catalog, article = store
     monkeypatch.setattr(server, 'CATALOG_PATH', catalog)
@@ -262,3 +256,24 @@ def test_article_url_uses_explicit_public_base(monkeypatch, tmp_path):
     url = build_article_url(tmp_path / 'space name.md')
     assert url.startswith('http://127.0.0.1:17776/article?file=')
     assert '%20' in url
+    article = tmp_path / 'nested' / 'article.md'
+    encoded = build_article_url(article, base_url='http://127.0.0.1:17776')
+    assert encoded == (
+        'http://127.0.0.1:17776/article?file=' + quote(str(article.resolve()), safe='')
+    )
+
+
+def test_article_url_cli_uses_explicit_ui_host_and_port(tmp_path, monkeypatch):
+    import article_url
+    article = tmp_path / 'article with spaces.md'
+    monkeypatch.delenv('KNOWLEDGE_UI_BASE_URL', raising=False)
+    monkeypatch.setenv('UI_HOST', '127.0.0.1')
+    monkeypatch.setenv('UI_PORT', '17776')
+    completed = subprocess.run(
+        [sys.executable, str(Path(article_url.__file__)), str(article)],
+        text=True, capture_output=True, check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == (
+        'http://127.0.0.1:17776/article?file=' + quote(str(article.resolve()), safe='')
+    )

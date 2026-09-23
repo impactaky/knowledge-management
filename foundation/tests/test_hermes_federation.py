@@ -123,6 +123,25 @@ class HermesFederationProviderTests(unittest.TestCase):
             self.assertIn("description", schema)
             self.assertIn("parameters", schema)
 
+    def test_live_entries_use_fixture_contract(self) -> None:
+        import tempfile
+        from federation_core import PUBLIC_RESPONSE_KEYS
+        from federation_support import make_fixture
+
+        with tempfile.TemporaryDirectory() as tmp:
+            catalog, _ = make_fixture(Path(tmp))
+            provider = FederationMemoryProvider(str(catalog))
+            with patch("federation_core.core._meili_request", side_effect=RuntimeError("offline")):
+                result = json.loads(
+                    provider.handle_tool_call(
+                        "federation_search", {"query": "specification", "deep": True}
+                    )
+                )
+        self.assertEqual(set(result), PUBLIC_RESPONSE_KEYS)
+        self.assertEqual(result["semantic_status"], "unavailable")
+        self.assertTrue(result["index_results"])
+        self.assertEqual(result["fulltext_results"], [])
+
 
 if __name__ == "__main__":
     unittest.main()
