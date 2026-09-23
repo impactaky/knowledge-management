@@ -60,14 +60,14 @@ Agentのcontextと規律、およびWorklogの本文形式と更新方法を定�
 _Avoid_: Knowledge Managementの内部モジュール、特定のagent製品、Bounded Context
 
 **活動保持 (Activity Retention)**:
-Activity Streamを参照可能なまま保つ外部contract。会話ログそのものをこのモデルへ取り込むことではなく、Worklogの保持とも別の境界である。
-_Avoid_: Worklog、正本、会話transcriptの集約
+Activity Stream（会話ログ、session履歴、Worklogを含む作業記録）を将来の参照と再蒸留のために保持する外部contract。Knowledge Managementは保持対象の意味と接点だけを定め、保持を実行するruntime modelは所有しない。
+_Avoid_: 保持の実行model、正本、会話transcriptの集約
 
 **作業ログ (Worklog)**:
-Macro Harnessがrunごとに更新する作業記録。再開のためだけでなく、過去のやり取りや作業経緯を後から探す手掛かりとして保持する。配置・識別・引き渡し・保持の規則は [Worklogs](docs/worklogs.md) を正本とし、本文形式と更新方法はハーネスが所有する。
-_Avoid_: 正本、監査証跡、会話全文、Activity Stream
+Macro Harnessがrunごとに更新する、Activity Stream上の作業記録。Activity Streamの一部であり、その全体や会話全文と同一ではない。再開のためだけでなく、過去のやり取りや作業経緯を後から探す手掛かりとして保持する。配置・識別・引き渡し・保持の具体規則は [Worklogs](docs/worklogs.md) を正本とし、本文形式と更新方法はハーネスが所有する。
+_Avoid_: 正本、監査証跡、会話全文、Activity Stream全体
 
-**作業ログストア (Worklog Store)**:
+**作業ログ保管庫 (Worklog Store)**:
 Worklogをrepository-or-_unscoped / Task ID / Run IDの配置で保持する保存先。会話transcriptやAgent Exchangeの交換ファイルの集約先ではない。rootと個人/組織の振分けは配備側が所有する。
 _Avoid_: 正本、Catalog、transcript集約先
 
@@ -79,6 +79,6 @@ _Avoid_: Request ID、Thread ID、Run ID
 連続した一つのagent実行ごとに発行する識別子。同じtaskの再開ではTask IDを引き継ぎ、新しいRun IDを発行する。
 _Avoid_: Task ID、Thread ID、Session ID
 
-**保持 (Retention)**:
-Worklogを成功・失敗・blocked・中断を問わず自動削除せず残す規則。生成失敗で空のまま残ったファイルだけを除去できる。
-_Avoid_: 自動削除、保持期間、Activity Retention
+**保持要件 (Retention)**:
+Activity Streamを将来の参照と再蒸留のために遡れるよう保持する要件。保持対象の意味と接点を定めるもので、記録形式や削除規則を狭く定めず、採用された結論を自動的に正本へ昇格させることでもない。Worklogの具体的な保持規則は [Worklogs](docs/worklogs.md) を正本とする。
+_Avoid_: 個別の削除規則、保持期間の既定値、結論の自動昇格
