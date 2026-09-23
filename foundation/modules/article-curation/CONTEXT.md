@@ -78,7 +78,7 @@ _Avoid_: 正本、常時再生成、on-demand実行、Draft previewとの同一�
 
 **テーマ (Theme)**:
 特定主題のStocked ArticleとClaim Lineをまとめる平坦な分類単位。Article自体に分類を重複記録せず、固有のdomain modelを持つ場合は別のBounded Contextとして判断する。
-_Avoid_: category tree、Display Theme、Bounded Contextとの自動的な同一視
+_Avoid_: category tree、UIの配色・外観、Bounded Contextとの自動的な同一視
 
 **主張行 (Claim Line)**:
 Stocked Article自身が保持する、その記事の主張を短く記したsource付きの少数の検索可能な主張。記事を読むか判断する入口として公開し、titleの写しや本文全体の要約とは区別する。
