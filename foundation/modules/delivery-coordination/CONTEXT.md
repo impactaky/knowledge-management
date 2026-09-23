@@ -39,5 +39,5 @@ _Avoid_: Design Confirmation、Stock、暗黙の着手
 _Avoid_: 途中監視、部分diffだけの検収、Responseとの同一視
 
 **作業ログ束縛 (Worklog Binding)**:
-Orderの自己完結性を、開始前に確定したtask worklog directoryの絶対pathとorder文書（`order.md`）へ結びつける規律。暗黙のprivate pathを持たず、解決できない場合は着手しない。
+Orderの自己完結性を、開始前に確定したtask worklog directoryの絶対pathとorder文書（`order.md`）へ結びつける規律。暗黙のprivate pathを持たず、解決できない場合は着手しない。Worklogの配置・識別・引き渡し・保持の共通契約は [Worklogs](../../docs/worklogs.md) を正本とする。
 _Avoid_: 暗黙の保存先、`tasks/`へのorder作成、worklog未確定での起動

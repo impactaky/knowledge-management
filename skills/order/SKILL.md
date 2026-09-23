@@ -7,7 +7,7 @@ description: 着手を決めたGit実装を元セッションで整理して1つ
 
 一つの自己完結したorderをHerdr名前付きsession上のfreshな実装Agentへ直接渡し、元セッションが成果物を検収する。実装者とnative引数は、orderごとの明示指定を最優先し、指定がなければorder skill所有のconfig（このSKILL.mdと同じdirectoryにある`scripts/resolve-config.py`が解決する`order.toml`）で設定した候補または既定のHerdr `kind`と引数配列から解決する。利用者がmodelやCLIを名前で示したときは、設定済み候補を一意に照合してからその候補を解決する。orderはHerdr対応kindの固定リストやmodel・effortの意味、providerが持つ利用可能model一覧を所有せず、解決した値を`herdr agent start`へ渡す。file-based Agent Exchange、queue、scheduler、progress channel、独自のdurable tracker、新規常駐サービスは使わない。
 
-Delivery Coordinationの語彙（Proposal、Design Confirmation、Implementation Authorization、Order、Review Boundary、Worklog Binding）は [delivery-coordination](../../foundation/modules/delivery-coordination/CONTEXT.md) を正本とする。設計への合意はImplementation Authorizationを含まず、本skillは明示的な実装依頼と実行計画の承認が揃ったときだけ起動する。
+Delivery Coordinationの語彙（Proposal、Design Confirmation、Implementation Authorization、Order、Review Boundary、Worklog Binding）は [delivery-coordination](../../foundation/modules/delivery-coordination/CONTEXT.md) を正本とする。Worklogの配置・識別・引き渡し・保持の共通契約は [Worklogs](../../foundation/docs/worklogs.md) を正本とし、本skillはorder固有のtask directory確定、`order.md`、kind別のCLI permission準備、起動、worker例外、検収だけを定める。設計への合意はImplementation Authorizationを含まず、本skillは明示的な実装依頼と実行計画の承認が揃ったときだけ起動する。
 
 ## 1. worklog_dirを確定してorderを書く
 

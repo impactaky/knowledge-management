@@ -50,3 +50,35 @@ _Avoid_: 生ログ、履歴、正本、蒸留済み知識、記事
 **ラッパースキル (Wrapper Skill)**:
 上流skillを無改変のまま名前で参照し、自分の差分だけを自分の正本として持つskill。上流更新への追従と独自規約を分離する。
 _Avoid_: 上流copyの直接編集、vendor、上流と同名のshadowing
+
+## External contracts
+
+このモデルの外側にあり、境界を越えて参照するcontract。配置・識別・引き渡し・保持の規則全文は語彙へ複製せず、各正本へリンクする。
+
+**マクロハーネス (Macro Harness)**:
+Agentのcontextと規律、およびWorklogの本文形式と更新方法を定める外部system。このモデルはハーネスを所有せず、そのcontractだけを参照する。
+_Avoid_: Knowledge Managementの内部モジュール、特定のagent製品、Bounded Context
+
+**活動保持 (Activity Retention)**:
+Activity Streamを参照可能なまま保つ外部contract。会話ログそのものをこのモデルへ取り込むことではなく、Worklogの保持とも別の境界である。
+_Avoid_: Worklog、正本、会話transcriptの集約
+
+**作業ログ (Worklog)**:
+Macro Harnessがrunごとに更新する作業記録。再開のためだけでなく、過去のやり取りや作業経緯を後から探す手掛かりとして保持する。配置・識別・引き渡し・保持の規則は [Worklogs](docs/worklogs.md) を正本とし、本文形式と更新方法はハーネスが所有する。
+_Avoid_: 正本、監査証跡、会話全文、Activity Stream
+
+**作業ログストア (Worklog Store)**:
+Worklogをrepository-or-_unscoped / Task ID / Run IDの配置で保持する保存先。会話transcriptやAgent Exchangeの交換ファイルの集約先ではない。rootと個人/組織の振分けは配備側が所有する。
+_Avoid_: 正本、Catalog、transcript集約先
+
+**タスクID (Task ID)**:
+Worklogの配置で一つのtaskを識別する、安全な単一path要素。既存のissue、bead、order IDを優先し、無ければtask UUIDを使う。
+_Avoid_: Request ID、Thread ID、Run ID
+
+**実行ID (Run ID)**:
+連続した一つのagent実行ごとに発行する識別子。同じtaskの再開ではTask IDを引き継ぎ、新しいRun IDを発行する。
+_Avoid_: Task ID、Thread ID、Session ID
+
+**保持 (Retention)**:
+Worklogを成功・失敗・blocked・中断を問わず自動削除せず残す規則。生成失敗で空のまま残ったファイルだけを除去できる。
+_Avoid_: 自動削除、保持期間、Activity Retention
