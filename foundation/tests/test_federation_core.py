@@ -284,14 +284,28 @@ class FederationCoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             catalog, _ = make_fixture(root)
-            # Real files exist outside every catalog package root, so the
-            # result cannot pass merely because a stale path is missing.
+            # A fully valid second glossary/article package that the original
+            # Catalog does not list. Its candidates must be rejected for scope,
+            # not because the files are missing or malformed.
             outside = root / "outside"
-            outside.mkdir()
-            outside_context = outside / "outside-context.md"
-            outside_article = outside / "outside-article.md"
-            outside_context.write_text("# Outside\n\noutside semantic\n", encoding="utf-8")
-            outside_article.write_text("# Outside\n\noutside body\n", encoding="utf-8")
+            article_dir = outside / "articles" / "theme"
+            article_dir.mkdir(parents=True)
+            outside_context = outside / "CONTEXT.md"
+            outside_context.write_text(
+                "# Outside context\n\n**Outside term**:\noutside semantic definition\n",
+                encoding="utf-8",
+            )
+            outside_article = article_dir / "outside-article.md"
+            outside_article.write_text(
+                '---\nclaims: ["- Outside claim — [Outside](outside-article.md)"]\n---\n'
+                "# Outside article\n\n## Outside section\noutside semantic body\n",
+                encoding="utf-8",
+            )
+            (outside / "INDEX.md").write_text(
+                "# Outside package\n\n"
+                "- outside specification claim — [Outside](articles/theme/outside-article.md)\n",
+                encoding="utf-8",
+            )
 
             def fake_request(_url: str, _method: str, path: str, payload=None):
                 if path == "/health":
@@ -300,11 +314,12 @@ class FederationCoreTests(unittest.TestCase):
                     return {
                         "hits": [
                             {
-                                "package": "stale",
+                                "package": "outside",
                                 "file": str(outside_context),
-                                "line": 3,
                                 "kind": "term",
-                                "text": "outside semantic",
+                                "line": 3,
+                                "end_line": 4,
+                                "text": "**Outside term**:\noutside semantic definition",
                                 "_rankingScore": 1.0,
                             }
                         ]
@@ -312,25 +327,49 @@ class FederationCoreTests(unittest.TestCase):
                 return {
                     "hits": [
                         {
-                            "package": "stale",
+                            "package": "outside",
                             "file": str(outside_article),
-                            "title": "Outside",
-                            "section": "Outside",
-                            "anchor": "outside",
+                            "title": "Outside article",
+                            "section": "Outside section",
+                            "anchor": "outside-section",
+                            "start_line": 6,
+                            "end_line": 7,
                             "_rankingScore": 1.0,
                         }
                     ]
                 }
 
             with patch.object(federation_core.core, "_meili_request", side_effect=fake_request):
-                result = federation_core.search(
+                excluded = federation_core.search(
                     "outside semantic", deep=True, catalog_path=catalog
                 )
+                # Positive control: registering the same package makes the very
+                # same candidates valid, so the exclusion above is Catalog scope.
+                included_catalog = root / "ALL.md"
+                included_catalog.write_text(
+                    "# CATALOG\n\n## パッケージ\n\n"
+                    "- [fixture](articles/theme/INDEX.md) — Fixture package\n"
+                    "- [outside](outside/INDEX.md) — Outside package\n",
+                    encoding="utf-8",
+                )
+                included = federation_core.search(
+                    "outside semantic", deep=True, catalog_path=included_catalog
+                )
 
-        self.assertEqual(result["article_results"], [])
+        self.assertEqual(excluded["article_results"], [])
         self.assertFalse(
-            any(row["path"].startswith(str(outside)) for row in result["index_results"])
+            any(row["path"].startswith(str(outside)) for row in excluded["index_results"])
         )
+        # The positive control proves the same files are otherwise publishable.
+        self.assertIn(
+            str(outside_article.resolve()),
+            [row["path"] for row in included["article_results"]],
+        )
+        self.assertIn(
+            str(outside_context.resolve()),
+            [row["path"] for row in included["index_results"]],
+        )
+        self.assertEqual(included["fulltext_results"], [])
 
     def test_all_result_limits_and_truncation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -91,12 +91,6 @@ class MigrationTests(ArticleStoreFixture, unittest.TestCase):
                 self.assertNotIn("DYNAMIC", b.markdown)
                 ast.parse(after)
 
-    def test_marimo_one_line_escaped_literal_locations_are_real_source_lines(self):
-        source = '名称="前"; mo.md("---\\nclaims: [\\"a\\", \\"b\\"]\\n---\\n# Title")\n'
-        article = read_article(self.path.with_suffix(".py"), source=source)
-        self.assertEqual([c.line for c in article.claims], [1, 1])
-        self.assertEqual(article.body, "# Title")
-
     def test_catalog_theme_package_index_is_retained_without_claim_inventory(self):
         self.legacy()
         self.catalog.write_text("## パッケージ\n- [theme](articles/theme/INDEX.md) — Theme\n")

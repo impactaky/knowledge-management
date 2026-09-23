@@ -139,8 +139,12 @@ class ExecutableArticleServerTest(unittest.TestCase):
 
     def test_live_marimo_launch_uses_python_module_and_reuses_existing_process(self) -> None:
         sample = (ARTICLES_ROOT / "executable-sample.py").resolve()
-        server.LIVE_MARIMO_PROCESSES.clear()
-        self.addCleanup(server.LIVE_MARIMO_PROCESSES.clear)
+        # Isolate process bookkeeping and the marimo log target so the test
+        # never clears inherited state or writes into the real .data directory.
+        data_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(data_dir.cleanup)
+        self.enterContext(patch.object(server, "LIVE_MARIMO_PROCESSES", {}))
+        self.enterContext(patch.dict("os.environ", {"KNOWLEDGE_DATA_DIR": data_dir.name}))
 
         class FakeProcess:
             pid = 4242

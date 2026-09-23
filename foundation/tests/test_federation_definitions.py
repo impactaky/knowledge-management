@@ -282,6 +282,24 @@ class ContextDefinitionTests(unittest.TestCase):
                         self.assertEqual(adapter["federation_search"]("Term", deep), expected)
             self.assertIn("CONTEXT definitions", adapter["federation_search"].__doc__)
 
+    def test_hermes_provider_preserves_complete_definition_on_every_route(self):
+        from federation_support import load_hermes_provider
+
+        with patch.dict("os.environ", {"FEDERATION_CATALOG": str(self.catalog)}):
+            provider = load_hermes_provider().FederationMemoryProvider(str(self.catalog))
+            for deep in (False, True):
+                for state in ("available", "offline"):
+                    with self.subTest(deep=deep, state=state), self.backend([self.hit()], state):
+                        expected = self.search(deep=deep)
+                        self.assert_definition(expected["index_results"][0])
+                        result = json.loads(
+                            provider.handle_tool_call(
+                                "federation_search", {"query": "Term", "deep": deep}
+                            )
+                        )
+                        self.assertEqual(result, expected)
+                        self.assert_definition(result["index_results"][0])
+
 
 if __name__ == "__main__":
     unittest.main()
