@@ -137,13 +137,13 @@ Agentはこのorder専用とし、元セッション以外からpromptしない�
 
 ## 3. Background terminalで待ち、同じcommandの結果を回収する
 
-初回のpromptは次の一つのcommandで渡し、`--wait`を付けたままBackground terminalへ預ける。
+初回のpromptは、このSKILL.mdと同じdirectoryの`scripts/prompt-wait.py`を使う次の一つのcommandで渡し、Background terminalへ預ける。promptはstdinから一つの引数として`herdr agent prompt --wait`へ渡り、shellで再評価されない。
 
 ```bash
-herdr --session <session> agent prompt "$agent" "$prompt" --wait
+printf '%s' "$prompt" | python3 <order-skill-dir>/scripts/prompt-wait.py --session <session> "$agent"
 ```
 
-`--wait`は既定のsettled状態である`idle`、`done`、`blocked`のいずれかまで待つ。`--until`で同じ状態を重ねない。実行ツールがsession handleを返しても、commandが実行中ならAgentの終端状態を得たことにはならない。
+`herdr agent prompt --wait`と`herdr agent wait`は、既定のsettled状態である`idle`、`done`、`blocked`の最初の観測で返る。統合によっては作業開始直後に一時的なsettled状態を報告し、作業中なのに返ることがある（例: OpenCode v2 TUIの新しいsessionの最初のturn）。`prompt-wait.py`はsettled返却後に短く待って`agent get`で状態を確かめ、`working`に戻っていれば`agent wait`をかけ直し、settled状態が保たれてから確認時の`agent get`のJSONを出力する。Herdrのerror（`agent_prompt_stalled`、`agent_blocked`、timeoutなど）はそのまま終了statusとともに返し、再待機しない。`--timeout <ms>`は待機全体の上限で、省略時は無期限。`herdr agent prompt --wait`や`herdr agent wait`を直接使わず、`--until`で同じ状態を重ねない。実行ツールがsession handleを返しても、commandが実行中ならAgentの終端状態を得たことにはならない。
 
 元セッションは`order_path`と`worklog_dir`、workspace ID、Agent名、worktree path、開始commit、実行ツールのsession handleを対応づけて保持する。Background terminalが返したsession handleを保持し、独立作業の区切りで同じprocessの出力を回収する。実行ツール固有の待機APIは環境に従う。
 
@@ -151,7 +151,7 @@ herdr --session <session> agent prompt "$agent" "$prompt" --wait
 | --- | --- |
 | commandが実行中 | 同じhandleを保持し、依頼済みの独立作業を進める。区切りで結果を回収し、まだ実行中なら同じ扱いを続ける。 |
 | 別作業がない | 同じ待機commandを長めに待つ。 |
-| Background terminal非対応 | 同じ`prompt --wait`を従来どおり同期的に待つ。 |
+| Background terminal非対応 | 同じ`prompt-wait.py`を従来どおり同期的に待つ。 |
 | `idle` / `done` | 結果を回収し、次節で実出力・最終応答を確認する。 |
 | `blocked` | 次節で理由を確認して解消する。合格や完了として扱わない。 |
 
@@ -165,11 +165,11 @@ settledが返ったら、まず`herdr --session <session> agent read "$agent" --
 
 `blocked`や承認待ちは、`herdr --session <session> agent get "$agent"`と上記`agent read`で理由を確認する。blocked中の`agent prompt`は送信前に`agent_blocked`で拒否される。コマンド承認画面なら対象内容と既存の許可範囲を確認し、CLIの入力形式に合わせて一回限りで解消する。必要なら対象Agentへ`herdr --session <session> agent send-keys "$agent" <key>...`を使う。ユーザの新しい判断が必要な場合だけ確認する。
 
-解消後も新しいpromptを重ねず、同じAgentの完了を待つ。既存の待機commandが実行中なら同じhandleを回収し、終了済みなら`herdr --session <session> agent wait "$agent"`を前節と同じ方式で待つ。返却後は再び実出力・最終応答を確認する。
+解消後も新しいpromptを重ねず、同じAgentの完了を待つ。既存の待機commandが実行中なら同じhandleを回収し、終了済みなら`python3 <order-skill-dir>/scripts/prompt-wait.py --session <session> "$agent" --wait-only`を前節と同じ方式で待つ。返却後は再び実出力・最終応答を確認する。
 
 実装完了を確認してから、開始commitからの全commit・完全なtask diff・test結果・未commit変更を読み、Acceptance criteriaを検収する。応答Agentの完了報告だけで合格にしない。
 
-問題があれば、対象箇所、期待する振る舞い、再現または検証方法だけを完了した同じAgentの同じ会話・worktreeへ`herdr --session <session> agent prompt ... --wait`で渡し、前節と同じ方式で待機・回収して再度検収する。元order全文は再掲しない。
+問題があれば、対象箇所、期待する振る舞い、再現または検証方法だけを完了した同じAgentの同じ会話・worktreeへ前節と同じ`prompt-wait.py`で渡し、前節と同じ方式で待機・回収して再度検収する。元order全文は再掲しない。
 
 ## 5. 合格して終了する
 

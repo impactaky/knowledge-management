@@ -64,12 +64,13 @@ uv run --locked --project foundation/tools/knowledge-ui pytest foundation/tests 
 uv run --locked --project foundation/tools/knowledge-ui python scripts/smoke.py
 ```
 
-The suite also runs the Agent Exchange and config-resolver shell contracts with
-temporary directories and a fake Herdr. Run one directly, for example:
+The suite also runs the Agent Exchange, order config-resolver and prompt-wait
+shell contracts with temporary directories and a fake Herdr. Run one directly, for example:
 
 ```bash
 bash skills/agent-exchange/tests/test-agent-exchange.sh
 bash skills/order/tests/test-resolve-config.sh
+bash skills/order/tests/test-prompt-wait.sh
 ```
 
 The tests use temporary synthetic stores and mock backends; the smoke script
