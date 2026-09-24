@@ -11,6 +11,7 @@ Read the [model overview](CONTEXT.md) for vocabulary, the
 - [Delivery and Agent Exchange decisions](docs/adr/0001-shared-delivery-and-agent-exchange.md) — 共有正本化の判断記録
 - [Knowledge changes](docs/knowledge-changes.md) — 知識の更新手順と昇格規則
 - [Worklogs](docs/worklogs.md) — 作業記録の配置・識別・引き渡し・保持の共通契約
+- [Projects](docs/projects.md) — project別Project Rulesの配置・配布・境界の共通契約
 - [Federation Core](integrations/federation-core/README.md) — カタログ駆動検索コアの契約
 - [Federation MCP](integrations/federation-mcp/README.md) — MCP stdio プロバイダ
 - [Checker](tools/knowledge-ui/check.py) — カタログ・リンク・語彙・主張の静的検証

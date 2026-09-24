@@ -103,7 +103,7 @@ _Avoid_: 人手だけのfile整理、build時pipelineだけによる管理
 _Avoid_: Catalogのcopy、利用者別のPackage一覧
 
 **プロジェクトルール (Project Rules)**:
-特定repositoryと特定実行環境の組合せだけで意味を持つ運用知識。共有可能なdomain知識や汎用規則は適切なKnowledge PackageへPromotionし、ここへ影の正本を作らない。
+特定repositoryと特定実行環境の組合せだけで意味を持つ運用知識。共有可能なdomain知識や汎用規則は適切なKnowledge PackageへPromotionし、ここへ影の正本を作らない。配置と配布は[Projectsの契約](../../docs/projects.md)に従う。
 _Avoid_: 共有可能な知識のcopy、repository単位だけでのTrust Boundary判定
 
 **リンク規律 (Link Discipline)**:
