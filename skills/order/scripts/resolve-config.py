@@ -14,6 +14,13 @@ live list of available models. ``--list`` prints the configured choices and
 ``--implementation NAME`` selects one for a single order. Neither contacts a
 provider or launches an agent, and native arguments stay opaque: they are never
 shell-evaluated, split or reordered.
+
+An optional ``[route]`` section enables selection through an external router.
+``route.services`` maps a router service id to a Herdr kind, and
+``route.configs.<config-id>`` maps a router config id to per-service native
+arguments. ``--route ROUTE_CONFIG SERVICE`` resolves one such pair; it is an
+error unless ``[route]`` exists with ``enabled = true``. The router itself is
+never invoked here.
 """
 from __future__ import annotations
 
@@ -26,6 +33,8 @@ from pathlib import Path
 
 CONFIG_NAME = "order.toml"
 DEFAULT_SESSION = "agent-exchange"
+DEFAULT_ROUTE_MODE = "balanced"
+ROUTE_MODES = ("cheap", "balanced", "best")
 
 
 class ConfigError(Exception):
@@ -109,6 +118,69 @@ def parse_default(data: dict, candidates: dict[str, dict]) -> dict | None:
     return {"form": "inline", "kind": kind, "args": list(args)}
 
 
+def parse_route(data: dict) -> dict | None:
+    section = data.get("route")
+    if section is None:
+        return None
+    if not isinstance(section, dict):
+        raise ConfigError("[route] must be a table")
+
+    enabled = section.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise ConfigError("[route] enabled must be a boolean")
+
+    mode = section.get("mode", DEFAULT_ROUTE_MODE)
+    if not isinstance(mode, str) or mode not in ROUTE_MODES:
+        raise ConfigError("[route] mode must be one of: " + ", ".join(ROUTE_MODES))
+
+    services: dict[str, str] = {}
+    services_section = section.get("services")
+    if services_section is not None:
+        if not isinstance(services_section, dict):
+            raise ConfigError("[route.services] must be a table")
+        for service, kind in services_section.items():
+            if not isinstance(kind, str) or not kind.strip():
+                raise ConfigError(
+                    f"route service kind for {service!r} must be a non-empty string"
+                )
+            services[service] = kind
+
+    configs: dict[str, dict[str, list[str]]] = {}
+    configs_section = section.get("configs")
+    if configs_section is not None:
+        if not isinstance(configs_section, dict):
+            raise ConfigError("[route.configs] must be a table")
+        for config_id, table in configs_section.items():
+            if not isinstance(table, dict):
+                raise ConfigError(f"[route.configs.{config_id}] must be a table")
+            resolved: dict[str, list[str]] = {}
+            for service, args in table.items():
+                if service not in services:
+                    raise ConfigError(
+                        f"route config {config_id!r} references an unknown service: {service!r}"
+                    )
+                if not isinstance(args, list) or any(not isinstance(arg, str) for arg in args):
+                    raise ConfigError(
+                        f"route config {config_id!r} args for {service!r} "
+                        "must be an array of strings"
+                    )
+                resolved[service] = list(args)
+            configs[config_id] = resolved
+
+    if enabled:
+        if not services:
+            raise ConfigError("[route] enabled requires a non-empty [route.services]")
+        if not configs:
+            raise ConfigError("[route] enabled requires a non-empty [route.configs]")
+
+    return {
+        "enabled": enabled,
+        "mode": mode,
+        "services": services,
+        "configs": configs,
+    }
+
+
 def load(path: Path) -> dict:
     if path.is_symlink() or not path.is_file():
         raise ConfigError(f"config file not found: {path}")
@@ -151,7 +223,14 @@ def load(path: Path) -> dict:
         "worklog_root": worklog_root,
         "candidates": candidates,
         "default": default,
+        "route": parse_route(data),
     }
+
+
+def route_summary(route: dict | None) -> dict:
+    if route is None:
+        return {"enabled": False, "mode": DEFAULT_ROUTE_MODE}
+    return {"enabled": route["enabled"], "mode": route["mode"]}
 
 
 def list_snapshot(config: dict) -> dict:
@@ -161,6 +240,7 @@ def list_snapshot(config: dict) -> dict:
         "config_path": config["config_path"],
         "default": default_name,
         "implementations": [dict(candidate) for candidate in config["candidates"].values()],
+        "route": route_summary(config["route"]),
     }
 
 
@@ -201,6 +281,34 @@ def resolve_snapshot(config: dict, requested: str | None) -> dict:
         "worklog_root": config["worklog_root"],
         "implementation": name,
         "label": label,
+        "route": route_summary(config["route"]),
+    }
+
+
+def route_snapshot(config: dict, route_config: str, service: str) -> dict:
+    route = config["route"]
+    if route is None or not route["enabled"]:
+        raise ConfigError("--route requires [route] with enabled = true in the config")
+    if route_config not in route["configs"]:
+        raise ConfigError(f"unknown route config: {route_config!r}")
+    if service not in route["services"]:
+        raise ConfigError(f"unknown route service: {service!r}")
+    if service not in route["configs"][route_config]:
+        raise ConfigError(
+            f"route config {route_config!r} has no arguments for service {service!r}"
+        )
+
+    return {
+        "source": "route",
+        "config_path": config["config_path"],
+        "kind": route["services"][service],
+        "args": route["configs"][route_config][service],
+        "session": config["session"],
+        "worklog_root": config["worklog_root"],
+        "implementation": None,
+        "label": None,
+        "route_config": route_config,
+        "route_service": service,
     }
 
 
@@ -214,12 +322,21 @@ def main(argv: list[str]) -> int:
         metavar="NAME",
         help="select one configured implementation for this order",
     )
+    mode.add_argument(
+        "--route",
+        nargs=2,
+        metavar=("ROUTE_CONFIG", "SERVICE"),
+        help="resolve a route config/service pair; requires [route] enabled = true",
+    )
     args = parser.parse_args(argv)
     try:
         path = resolve_path(args.config)
         config = load(path)
         if args.list:
             snapshot = list_snapshot(config)
+        elif args.route:
+            route_config, service = args.route
+            snapshot = route_snapshot(config, route_config, service)
         else:
             snapshot = resolve_snapshot(config, args.implementation)
     except ConfigError as exc:

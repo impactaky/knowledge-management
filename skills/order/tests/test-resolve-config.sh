@@ -311,4 +311,129 @@ assert_eq "$(jq -c .args <<<"$resolver_out")" \
     '["two words","quote\"and${dollar}","line1\nline2","tab\there",""]' \
     'special arguments did not round-trip as data'
 
+# --- Optional router route resolution --------------------------------------
+
+# A config without [route] reports the route defaults, so an order that reads
+# the snapshot sees the router disabled and packaged the same as before.
+run_resolver "$named" '' '' '' --list
+[[ "$resolver_status" -eq 0 ]] || fail "--list without [route] failed"
+assert_eq "$(jq -r '.route.enabled' <<<"$resolver_out")" false 'route enabled defaults to false'
+assert_eq "$(jq -r '.route.mode' <<<"$resolver_out")" balanced 'route mode defaults to balanced'
+run_resolver "$named" '' '' ''
+[[ "$resolver_status" -eq 0 ]] || fail 'default resolution without [route] failed'
+assert_eq "$(jq -r '.route.enabled' <<<"$resolver_out")" false 'resolution route enabled default'
+assert_eq "$(jq -r '.route.mode' <<<"$resolver_out")" balanced 'resolution route mode default'
+run_resolver "$named" '' '' '' --implementation reasoning
+[[ "$resolver_status" -eq 0 ]] || fail '--implementation without [route] failed'
+assert_eq "$(jq -r '.route.enabled' <<<"$resolver_out")" false 'selection route enabled default'
+assert_eq "$(jq -r '.route.mode' <<<"$resolver_out")" balanced 'selection route mode default'
+
+# [route] without enabled/mode uses the same defaults even when it declares
+# services and configs.
+route_defaults="$test_root/route-defaults.toml"
+write_config "$route_defaults" \
+    '[implementation]' 'kind = "k"' 'args = []' \
+    '[route]' \
+    '[route.services]' 'example-service = "example-kind"' \
+    '[route.configs."example-config"]' 'example-service = []'
+run_resolver "$route_defaults" '' '' '' --list
+[[ "$resolver_status" -eq 0 ]] || fail "route defaults --list failed: $(cat "$test_root/stderr")"
+assert_eq "$(jq -r '.route.enabled' <<<"$resolver_out")" false 'explicit route keeps enabled default'
+assert_eq "$(jq -r '.route.mode' <<<"$resolver_out")" balanced 'explicit route keeps mode default'
+
+# A fully configured route resolves one config/service pair into a kind and
+# ordered native args snapshot, preserving inherited metadata.
+route_config="$test_root/route.toml"
+write_config "$route_config" \
+    '[implementation]' 'kind = "inline-kind"' 'args = ["--inline"]' \
+    '[herdr]' 'session = "custom-session"' \
+    '[worklog]' 'root = "/absolute/worklog/root"' \
+    '[route]' 'enabled = true' 'mode = "best"' \
+    '[route.services]' 'example-service = "example-kind"' 'another-service = "another-kind"' \
+    '[route.configs."example-config"]' \
+    'another-service = ["--model", "example-model", "--flag", "value with space"]' \
+    'example-service = ["--example-flag", "value"]' \
+    '[route.configs."empty-config"]' \
+    'example-service = []'
+run_resolver "$route_config" '' '' '' --list
+[[ "$resolver_status" -eq 0 ]] || fail "route --list failed: $(cat "$test_root/stderr")"
+assert_eq "$(jq -r '.route.enabled' <<<"$resolver_out")" true 'route list enabled'
+assert_eq "$(jq -r '.route.mode' <<<"$resolver_out")" best 'route list mode'
+run_resolver "$route_config" '' '' '' --route example-config another-service
+[[ "$resolver_status" -eq 0 ]] || fail "--route failed: $(cat "$test_root/stderr")"
+assert_eq "$(jq -r .source <<<"$resolver_out")" route 'route source'
+assert_eq "$(jq -r .kind <<<"$resolver_out")" another-kind 'route service kind'
+assert_eq "$(jq -c .args <<<"$resolver_out")" \
+    '["--model","example-model","--flag","value with space"]' 'route args order and spaces'
+assert_eq "$(jq -r .implementation <<<"$resolver_out")" null 'route implementation is null'
+assert_eq "$(jq -r .label <<<"$resolver_out")" null 'route label is null'
+assert_eq "$(jq -r .route_config <<<"$resolver_out")" example-config 'route config id'
+assert_eq "$(jq -r .route_service <<<"$resolver_out")" another-service 'route service id'
+assert_eq "$(jq -r .session <<<"$resolver_out")" custom-session 'route session inherited'
+assert_eq "$(jq -r .worklog_root <<<"$resolver_out")" /absolute/worklog/root 'route worklog inherited'
+assert_eq "$(jq -r .config_path <<<"$resolver_out")" \
+    "$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$route_config")" \
+    'route config path'
+run_resolver "$route_config" '' '' '' --route example-config example-service
+[[ "$resolver_status" -eq 0 ]] || fail 'second route pair failed'
+assert_eq "$(jq -r .kind <<<"$resolver_out")" example-kind 'second route kind'
+assert_eq "$(jq -c .args <<<"$resolver_out")" '["--example-flag","value"]' 'second route args'
+run_resolver "$route_config" '' '' '' --route empty-config example-service
+[[ "$resolver_status" -eq 0 ]] || fail 'empty route args failed'
+assert_eq "$(jq -c .args <<<"$resolver_out")" '[]' 'empty route args stay empty'
+
+# Unknown configs/services, a service without args for a config, and --route
+# with the router disabled or combined with another mode are all errors.
+for bad_route in \
+    'unknown-service|example-config|does-not-exist' \
+    'unknown-config|does-not-exist|example-service' \
+    'missing-pair|empty-config|another-service'; do
+    IFS='|' read -r label route_id service <<<"$bad_route"
+    run_resolver "$route_config" '' '' '' --route "$route_id" "$service"
+    [[ "$resolver_status" -ne 0 ]] || fail "--route accepted $label"
+done
+route_disabled="$test_root/route-disabled.toml"
+write_config "$route_disabled" \
+    '[implementation]' 'kind = "k"' 'args = []' \
+    '[route]' 'enabled = false' \
+    '[route.services]' 'example-service = "example-kind"' \
+    '[route.configs."example-config"]' 'example-service = []'
+run_resolver "$route_disabled" '' '' '' --route example-config example-service
+[[ "$resolver_status" -ne 0 ]] || fail '--route accepted a disabled [route]'
+grep -F 'enabled = true' "$test_root/stderr" >/dev/null ||
+    fail 'disabled --route reason is unclear'
+run_resolver "$route_config" '' '' '' --route example-config example-service --list
+[[ "$resolver_status" -ne 0 ]] || fail '--route and --list were combined'
+run_resolver "$route_config" '' '' '' --route example-config example-service --implementation fast-code
+[[ "$resolver_status" -ne 0 ]] || fail '--route and --implementation were combined'
+
+# Malformed [route] tables fail for both list and resolution with a clear
+# reason and no traceback.
+for bad_case in \
+    'route-not-table.toml|route = "x"\n[implementation]\nkind = "k"\nargs = []' \
+    'route-enabled-type.toml|[implementation]\nkind = "k"\nargs = []\n[route]\nenabled = "yes"' \
+    'route-mode-value.toml|[implementation]\nkind = "k"\nargs = []\n[route]\nmode = "fast"' \
+    'route-mode-type.toml|[implementation]\nkind = "k"\nargs = []\n[route]\nmode = 5' \
+    'route-services-not-table.toml|[implementation]\nkind = "k"\nargs = []\n[route]\nservices = "x"' \
+    'route-configs-not-table.toml|[implementation]\nkind = "k"\nargs = []\n[route]\nconfigs = "x"' \
+    'route-service-kind-empty.toml|[implementation]\nkind = "k"\nargs = []\n[route]\n[route.services]\nexample-service = ""' \
+    'route-config-not-table.toml|[implementation]\nkind = "k"\nargs = []\n[route]\n[route.services]\nexample-service = "example-kind"\n[route.configs]\nexample-config = "x"' \
+    'route-unknown-service.toml|[implementation]\nkind = "k"\nargs = []\n[route]\n[route.services]\nexample-service = "example-kind"\n[route.configs."example-config"]\nmissing = []' \
+    'route-args-not-array.toml|[implementation]\nkind = "k"\nargs = []\n[route]\n[route.services]\nexample-service = "example-kind"\n[route.configs."example-config"]\nexample-service = "--flag"' \
+    'route-args-mixed.toml|[implementation]\nkind = "k"\nargs = []\n[route]\n[route.services]\nexample-service = "example-kind"\n[route.configs."example-config"]\nexample-service = [1, "two"]' \
+    'route-enabled-no-services.toml|[implementation]\nkind = "k"\nargs = []\n[route]\nenabled = true' \
+    'route-enabled-no-configs.toml|[implementation]\nkind = "k"\nargs = []\n[route]\nenabled = true\n[route.services]\nexample-service = "example-kind"'; do
+    name="${bad_case%%|*}"
+    body="${bad_case#*|}"
+    path="$test_root/$name"
+    printf '%b\n' "$body" >"$path"
+    run_resolver "$path" '' '' ''
+    [[ "$resolver_status" -ne 0 ]] || fail "bad route config was accepted on resolve: $name"
+    run_resolver "$path" '' '' '' --list
+    [[ "$resolver_status" -ne 0 ]] || fail "bad route config was accepted on list: $name"
+    if grep -F 'Traceback' "$test_root/stderr" >/dev/null; then
+        fail "bad route config produced a traceback: $name"
+    fi
+done
+
 printf 'ok - order config resolver tests passed\n'
