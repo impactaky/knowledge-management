@@ -40,6 +40,33 @@ args = ["--model", "another-example-model", "--effort", "high"]
 # config, an unknown name, or an ambiguous default stops the order; there is no
 # fallback to another candidate.
 
+# Optional router selection. When [route] enabled = true, an order with no
+# explicit or name-based implementation asks capability-router
+# (https://github.com/impactaky/capability-router) to choose one. The router
+# reports a config id, a service id and a log id; [route.services] maps the
+# service id to a Herdr kind and [route.configs.<config-id>] maps the config id
+# to the native args for each service. The resolver never calls the router.
+# The ids and model below are fictional examples.
+#
+# [route]
+# enabled = true
+# mode = "balanced"        # cheap | balanced | best
+#
+# [route.services]
+# codex = "codex"
+# cursor = "cursor"
+#
+# [route.configs."example-config"]
+# cursor = ["--model", "example-model"]
+# codex = ["--example-flag", "value"]
+#
+# Resolve one pair for a single order with:
+#
+#   python3 scripts/resolve-config.py --config <this file> --route example-config cursor
+#
+# --route errors unless enabled = true, is mutually exclusive with --list and
+# --implementation, and an unknown config/service pair stops the order.
+
 # Optional Herdr session that hosts the implementation agent. Defaults to
 # "agent-exchange" when omitted.
 [herdr]

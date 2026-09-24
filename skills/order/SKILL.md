@@ -5,7 +5,7 @@ description: 着手を決めたGit実装を元セッションで整理して1つ
 
 # /order — 設計とreviewからHerdr実装まで回す
 
-一つの自己完結したorderをHerdr名前付きsession上のfreshな実装Agentへ直接渡し、元セッションが成果物を検収する。実装者とnative引数は、orderごとの明示指定を最優先し、指定がなければorder skill所有のconfig（このSKILL.mdと同じdirectoryにある`scripts/resolve-config.py`が解決する`order.toml`）で設定した候補または既定のHerdr `kind`と引数配列から解決する。利用者がmodelやCLIを名前で示したときは、設定済み候補を一意に照合してからその候補を解決する。orderはHerdr対応kindの固定リストやmodel・effortの意味、providerが持つ利用可能model一覧を所有せず、解決した値を`herdr agent start`へ渡す。file-based Agent Exchange、queue、scheduler、progress channel、独自のdurable tracker、新規常駐サービスは使わない。
+一つの自己完結したorderをHerdr名前付きsession上のfreshな実装Agentへ直接渡し、元セッションが成果物を検収する。実装者とnative引数は、orderごとの明示指定を最優先し、指定がなければorder skill所有のconfig（このSKILL.mdと同じdirectoryにある`scripts/resolve-config.py`が解決する`order.toml`）で設定した候補または既定のHerdr `kind`と引数配列から解決する。利用者がmodelやCLIを名前で示したときは、設定済み候補を一意に照合してからその候補を解決する。`[route]`を有効にした利用者configでは、明示指定も名前指定もないorderの実装者をcapability-routerで選び、configの変換表でHerdrの`kind`とnative引数にする。orderはHerdr対応kindの固定リストやmodel・effortの意味、providerが持つ利用可能model一覧を所有せず、解決した値を`herdr agent start`へ渡す。file-based Agent Exchange、queue、scheduler、progress channel、独自のdurable tracker、新規常駐サービスは使わない。
 
 Delivery Coordinationの語彙（Proposal、Design Confirmation、Implementation Authorization、Order、Review Boundary、Worklog Binding）は [delivery-coordination](../../foundation/modules/delivery-coordination/CONTEXT.md) を正本とする。Worklogの配置・識別・引き渡し・保持の共通契約は [Worklogs](../../foundation/docs/worklogs.md) を正本とし、本skillはorder固有のtask directory確定、`order.md`、kind別のCLI permission準備、起動、worker例外、検収だけを定める。設計への合意はImplementation Authorizationを含まず、本skillは明示的な実装依頼と実行計画の承認が揃ったときだけ起動する。
 
@@ -60,7 +60,20 @@ order開始時に実装者とnative引数を一度だけ解決し、結果をCon
 
 1. 当該orderで利用者が明示した`kind`とnative引数の組。明示指定は組全体を一回限りで置き換え、`kind`だけを指定した場合は引数を空とし、別kindのconfig引数を持ち越さない。明示指定はdefaultではなく一回限りの上書きであり、configの参照も検証も要求しない（configがなくても明示指定した値を使える）。
 2. 明示指定がなく、利用者がmodelやCLIを名前で示した場合は、設定済み候補から名前で選ぶ。`resolve-config.py --list`で候補を列挙し、要求された名前・modelを一意な候補へ照合して`--implementation <name>`で解決する。`--list`と`--implementation`は同時に使わない。一意に照合できないときはnative引数を推測せず、候補も黙って選ばず、親sessionで利用者へ確認する。`--list`はproviderへ問い合わせずagentも起動しない。この経路は既定の有無に依存せず、`[implementations]`だけのconfigでも列挙と明示選択ができる。
-3. どの候補も名前で要求されていない場合は、configの既定`[implementation]`を使う。configの所在は明示的な`ORDER_CONFIG`、次に`${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/order.toml`の順で解決し、対象実装repositoryには依存しない。`kind`はHerdrへ渡すkind、`args`は順序を保った文字列配列。configが存在しない場合、または既定が定義されていない場合は、既定解決として起動前にblockerとして停止し、skill本文の既定値へ戻さない。雛形は同じdirectoryの`config.example.toml`に置き、実利用configはrepositoryへcommitしない。
+3. 明示指定も名前指定もなく、configの`[route] enabled = true`のときは、capability-routerで実装者を選ぶ。routerの利用はoptional capabilityであり、`[route]`を省略または無効にしたconfigはこの段階を飛ばして既定`[implementation]`へ進む。選び方とblockerの条件は下の「routerで選ぶ手順」に従い、選べないときは既定や別の候補へ黙って切り替えない。
+4. どの候補も名前で要求されていない場合は、configの既定`[implementation]`を使う。configの所在は明示的な`ORDER_CONFIG`、次に`${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/order.toml`の順で解決し、対象実装repositoryには依存しない。`kind`はHerdrへ渡すkind、`args`は順序を保った文字列配列。configが存在しない場合、または既定が定義されていない場合は、既定解決として起動前にblockerとして停止し、skill本文の既定値へ戻さない。雛形は同じdirectoryの`config.example.toml`に置き、実利用configはrepositoryへcommitしない。
+
+#### routerで選ぶ手順
+
+capability-routerはoptionalな依存で、order skillはrouterの公開CLIの形だけに依存し、router本体や利用者の実configの変換表を変更しない。公開repositoryは https://github.com/impactaky/capability-router 。
+
+1. capability-routerのskill（同じdirectoryの`criteria.md`）の基準に従い、orderのGoalとWorkから9項目の要求levelを見積もる。見積もりが終わるまでrouterのmodel表を見ない（capability-routerのskillの規則）。
+2. `capability-router route --levels <9項目> --mode <config の [route] mode> --label <orderのslug> --print-log-id "<orderのGoal>"`を呼ぶ。stdout 1行は`<config> <service> <log-id>`で、logを書かなかったときのlog-idは`-`。選べないときは終了コード1でstderrにエラーを返す。
+3. `resolve-config.py --route <config> <service>`で`kind`と引数に変換する。
+4. Contextに、選択元`route`、9項目のlevel、mode、routeの出力（config、service、log-id）、変換した`kind`と引数、configのpathを記録する。
+5. capability-routerが無い・終了コードが0でない・変換表に無いconfig/serviceのときは、起動前にblockerとして停止する。既定の`[implementation]`や別の候補へ黙って切り替えない。
+
+routerのサービスidの一覧はorder skillに固定せず、configの変換表に無いidはblockerとして停止する。`[route]`を有効にしないときはrouterを呼ばず、優先順位4の既定`[implementation]`を使い、kind別の起動準備を含めてこれまでと同じに動く。
 
 configは既定の`[implementation]`と、任意の名前付き候補`[implementations.<name>]`を持つ。候補の名前は空でなく空白を含まないTOMLキー。`label`は任意の非空文字列で、省略すると名前を既定値にする。`kind`は非空文字列、`args`は順序を保った文字列配列。`[implementation]`の既定はinlineの`kind`/`args`か、`[implementations.<name>]`を指す`name`参照のどちらか一方だけにする。両方を書いた混在、存在しない`name`、空の名前・`label`・`kind`、文字列配列でない`args`は起動前にblockerとして停止する。inline既定と名前付き候補は共存でき、その場合も`--list`は候補を返し、`--implementation`はinline既定を上書きする。候補は利用者が設定した実装の選択肢であり、providerが持つ利用可能model一覧でも、order組み込みの候補でもない。未知の`kind`やnative model識別子もそのまま渡す。
 
@@ -80,7 +93,23 @@ args = ["--model", "another-example-model", "--effort", "high"]
 
 解決とschema検証は、このSKILL.mdと同じdirectoryの`scripts/resolve-config.py`を実行して一貫して行い、機械可読なsnapshotを得る。全操作で全ての候補と既定を検証し、`kind`が空でない文字列であること、`args`が文字列配列であることを確認する。configが存在しない、または存在して不正なTOML、`[implementation]`も`[implementations]`もない、混在した既定形式、存在しない既定参照、不正な候補表、空の名前・`label`・`kind`、文字列配列でない`args`のいずれかである場合は、起動前にblockerとして停止する。ただし`[implementations]`があり既定だけがないconfigは、列挙と明示選択が成功し、既定解決だけが「既定がない」としてblockerになる。`--implementation`で指定した名前が存在しない場合もblockerとして停止し、既定や別候補へfallbackしない。`kind`がHerdrと対象CLIに受理されるかの判断はHerdrとCLIを正とし、orderはkind候補の固定リストを持たない。modelやreasoning effortの意味もorderは解釈せず、利用者がnative引数で指定した値だけを渡す。
 
-Contextへは選択元（明示指定 / config）と、configから解決した場合は選択した候補名`implementation`と`label`、解決した`kind`、順序を保った引数配列、解決したconfigの絶対pathを記録する。inline既定を使った場合は`implementation`と`label`を`null`として記録する。選択はorder開始時に凍結し、進行中のconfig変更を反映しない。
+明示指定も名前指定もなく`[route] enabled = true`のときは、`resolve-config.py --route`でrouterの組を解決する。`[route]`は次の形をとり、全操作で`resolve-config.py`が検証する。
+
+```toml
+[route]
+enabled = true            # 省略時 false。bool 以外はエラー
+mode = "balanced"         # 省略時 "balanced"。cheap / balanced / best 以外はエラー
+
+[route.services]          # router のサービス id → Herdr kind。値は空でない文字列
+example-service = "example-kind"
+
+[route.configs."example-config"]   # router の config id → サービス id ごとの native 引数 (文字列配列)
+example-service = ["--model", "example-model"]
+```
+
+`enabled = true`なのに`[route.services]`か`[route.configs]`が空の場合、`[route.configs.<id>]`が`[route.services]`に無いサービスを参照する場合、その値が文字列配列でない場合は起動前にblockerとして停止する。`--route <config> <service>`は既存の`--implementation`と同じ形のsnapshotを、`source = "route"`、`implementation`と`label`を`null`、追加の`route_config`と`route_service`のkey付きで返す。`[route]`が無いか`enabled = false`の場合、変換表に無い組の場合、`--list`や`--implementation`と同時に使った場合はエラーとなり起動前に停止する。`[route]`が無いconfigの`route`は`enabled = false`、`mode = "balanced"`として扱う。
+
+Contextへは選択元（明示指定 / config / route）と、configから解決した場合は選択した候補名`implementation`と`label`、解決した`kind`、順序を保った引数配列、解決したconfigの絶対pathを記録する。routeで解決した場合は9項目のlevel、mode、config、service、log-idと、変換した`kind`と引数も記録する。inline既定を使った場合は`implementation`と`label`を`null`として記録する。選択はorder開始時に凍結し、進行中のconfig変更を反映しない。
 
 実装対象がGit repository rootであることと、開始commitを確認する。次のcommandで隔離worktreeを作り、JSONからworkspace ID、root pane ID、worktree pathを読む。IDやpathを推測しない。
 
@@ -181,6 +210,10 @@ herdr --session <session> worktree remove --workspace "$workspace"
 
 branchは削除しない。失敗・中断・未解決blockでは`order_path`の`order.md`、workspace、worktree、branchを残し、後続turnで同じ`order_path`を再開元としてHerdrのlabelとGit branchから再開する。自動復旧metadataは作らない。
 
+### 委任の結果を記録する
+
+Contextにlog-id（`-`以外）がある場合、orderを終えるときに`capability-router log outcome <log-id> --status <pass|fail|abandoned> --rounds <同じAgentへ差し戻した回数> --implementer "<kind> <引数を空白でつないだもの>"`を一度だけ呼ぶ。合格は`pass`、失敗で打ち切りは`fail`、利用者の判断で中断は`abandoned`。所要時間は省略し、routeからの経過時間をrouterに任せる。`--rounds`は同じAgentへ差し戻した回数で、差し戻しの各回ではなくorder終了時に一度だけ記録する。記録に失敗してもorderの終了・報告は止めず、失敗したことを報告に書く。log-idが無い（routerを使っていない）orderでは何もしない。
+
 ## 境界
 
 - 元セッションはgrill、order作成、Herdr起動、完了後review、差し戻し、終了を担う。
@@ -189,4 +222,5 @@ branchは削除しない。失敗・中断・未解決blockでは`order_path`の
 - Herdr session名は実装側resourceの配置先であり、Agent ExchangeのRequest / Response / Thread規約を使うことを意味しない。
 - file-based Agent Exchangeは耐久的なfile handoffが必要な別workflowであり、orderから呼ばない。
 - 実装者のkind候補を固定せず、不明なkindでは専用準備を推測しない。
+- capability-routerは`[route]`を有効にしたときだけ使うoptional capabilityであり、無効または省略したconfigではrouterを呼ばない。
 - 会社の機密の実体を個人ストアに書かない。
