@@ -124,16 +124,23 @@ configuration from outside this checkout and never from a committed real config.
 an explicit `ORDER_CONFIG`, then
 `${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/order.toml`. The
 selection priority is an explicit order-level `kind`/native-args override (which
-needs no config), then a candidate requested by name, then the configured
-default. The default is `[implementation]`, either inline `kind` and ordered
-`args`, or a `name` reference to a `[implementations.<name>]` entry. Each named
-entry uses a non-blank, whitespace-free TOML key as its name and declares a
-non-empty `kind`, ordered string `args`, and an optional non-empty `label`
-(defaulting to the name). Named entries are the user's configured choices, not a
-provider's live available-model list; the resolver never queries a provider or
-launches an agent. The skill's `scripts/resolve-config.py` validates the whole
-file and prints a JSON snapshot, with `--list` for deterministic discovery and
-`--implementation NAME` to select one candidate for a single order (the two are
+needs no config), then a candidate requested by name, then the optional router
+when `[route] enabled = true`, then the configured default. The router is an
+optional capability that depends on capability-router
+(https://github.com/impactaky/capability-router): it reports a config and
+service, and `--route ROUTE_CONFIG SERVICE` maps them through `[route.services]`
+and `[route.configs.<id>]` to a kind and ordered native args. A config without
+`[route]`, or with `enabled = false`, never calls the router and keeps the
+previous flow. The default is `[implementation]`, either inline `kind` and
+ordered `args`, or a `name` reference to a `[implementations.<name>]` entry.
+Each named entry uses a non-blank, whitespace-free TOML key as its name and
+declares a non-empty `kind`, ordered string `args`, and an optional non-empty
+`label` (defaulting to the name). Named entries are the user's configured
+choices, not a provider's live available-model list; the resolver never queries
+a provider or launches an agent. The skill's `scripts/resolve-config.py`
+validates the whole file and prints a JSON snapshot, with `--list` for
+deterministic discovery, `--implementation NAME` to select one candidate for a
+single order, and `--route ROUTE_CONFIG SERVICE` to resolve a router pair (all
 mutually exclusive). A registry-only config without a default still lists and
 selects, while default resolution, a missing or invalid config, an unknown name
 and an ambiguous default stop the order before any agent starts. There is no

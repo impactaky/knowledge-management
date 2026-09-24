@@ -67,7 +67,7 @@ order開始時に実装者とnative引数を一度だけ解決し、結果をCon
 
 capability-routerはoptionalな依存で、order skillはrouterの公開CLIの形だけに依存し、router本体や利用者の実configの変換表を変更しない。公開repositoryは https://github.com/impactaky/capability-router 。
 
-1. capability-routerのskill（同じdirectoryの`criteria.md`）の基準に従い、orderのGoalとWorkから9項目の要求levelを見積もる。見積もりが終わるまでrouterのmodel表を見ない（capability-routerのskillの規則）。
+1. capability-routerのskill（`SKILL.md`と、それと同じdirectoryの`criteria.md`）の基準に従い、orderのGoalとWorkから9項目の要求levelを見積もる。見積もりが終わるまでrouterのmodel表を見ない（capability-routerのskillの規則）。
 2. `capability-router route --levels <9項目> --mode <config の [route] mode> --label <orderのslug> --print-log-id "<orderのGoal>"`を呼ぶ。stdout 1行は`<config> <service> <log-id>`で、logを書かなかったときのlog-idは`-`。選べないときは終了コード1でstderrにエラーを返す。
 3. `resolve-config.py --route <config> <service>`で`kind`と引数に変換する。
 4. Contextに、選択元`route`、9項目のlevel、mode、routeの出力（config、service、log-id）、変換した`kind`と引数、configのpathを記録する。
