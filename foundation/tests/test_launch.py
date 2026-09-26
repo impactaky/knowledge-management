@@ -102,6 +102,17 @@ class MockHealthServer:
 
 
 class TestLauncherConfig(unittest.TestCase):
+    def test_data_dir_defaults_and_override(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = {"FEDERATION_CATALOG": str(MINIMAL_CATALOG), "HOME": tmp}
+            expected = Path(tmp) / ".local/state/knowledge-management"
+            self.assertEqual(LauncherConfig.from_env(base).data_dir, expected)
+            base["XDG_STATE_HOME"] = str(Path(tmp) / "state")
+            self.assertEqual(LauncherConfig.from_env(base).data_dir, Path(tmp) / "state/knowledge-management")
+            base["KNOWLEDGE_DATA_DIR"] = str(Path(tmp) / "explicit")
+            self.assertEqual(LauncherConfig.from_env(base).data_dir, Path(tmp) / "explicit")
+            self.assertFalse(expected.exists())
+
     def test_parse_bool(self):
         for val in ("1", "true", "TRUE", "yes", "YES", "on", "ON"):
             self.assertTrue(parse_bool("FLAG", val))
@@ -1079,6 +1090,32 @@ http.server.HTTPServer(('127.0.0.1', {external_port}), H).serve_forever()
 
 
 class TestRunScript(unittest.TestCase):
+    def test_default_env_file_and_explicit_precedence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            mock_uv = root / "uv"
+            mock_uv.write_text("#!/bin/sh\nprintf '%s\\n' \"$@\"\n")
+            mock_uv.chmod(0o755)
+            env = {**os.environ, "HOME": tmp, "XDG_CONFIG_HOME": "", "PATH": f"{root}:{os.environ['PATH']}"}
+            explicit = root / "explicit.env"
+            explicit.touch()
+            for config_home in (root / ".config", root / "custom"):
+                env["XDG_CONFIG_HOME"] = "" if config_home.name == ".config" else str(config_home)
+                default = config_home / "knowledge-management/runtime.env"
+                default.parent.mkdir(parents=True)
+                for exists in (False, True):
+                    if exists:
+                        default.touch()
+                    for override in (False, True):
+                        args = ["--env-file", str(explicit)] if override else []
+                        result = subprocess.run(["bash", str(RUN_SH), *args], env=env, capture_output=True, text=True)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        argv = result.stdout.splitlines()
+                        if override or exists:
+                            self.assertEqual(argv[argv.index("--env-file") + 1], str(explicit if override else default))
+                        else:
+                            self.assertNotIn("--env-file", argv)
+
     def test_run_sh_help(self):
         res = subprocess.run(["bash", str(RUN_SH), "--help"], capture_output=True, text=True)
         self.assertEqual(res.returncode, 0)

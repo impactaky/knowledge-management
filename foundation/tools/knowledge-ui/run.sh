@@ -15,6 +15,7 @@ while [[ $# -gt 0 ]]; do
       echo ""
       echo "Options:"
       echo "  --env-file FILE   Load environment variables from FILE via uv --env-file"
+      echo '  Default: ${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/runtime.env (if present)'
       echo "  --help, -h        Show this help message and exit"
       exit 0
       ;;
@@ -41,6 +42,13 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ -z "$env_file" ]]; then
+  default_env_file="${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/runtime.env"
+  if [[ -f "$default_env_file" ]]; then
+    env_file="$default_env_file"
+  fi
+fi
 
 uv_args=()
 if [[ -n "$env_file" ]]; then

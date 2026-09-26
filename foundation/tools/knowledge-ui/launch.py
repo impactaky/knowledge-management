@@ -20,7 +20,6 @@ from urllib.parse import ParseResult, urlparse
 from urllib.request import Request, urlopen
 
 UI_DIR = Path(__file__).resolve().parent
-REPO_DIR = Path(__file__).resolve().parents[3]
 CORE_DIR = Path(__file__).resolve().parents[2] / "integrations" / "federation-core"
 
 if str(CORE_DIR) not in sys.path:
@@ -305,7 +304,8 @@ class LauncherConfig:
 
         # Data directory path resolution without mkdir
         data_dir_raw = env.get("KNOWLEDGE_DATA_DIR")
-        data_dir = Path(data_dir_raw).expanduser().resolve() if data_dir_raw else (REPO_DIR / ".data").resolve()
+        state_home = Path(env.get("XDG_STATE_HOME") or Path(env.get("HOME") or Path.home()) / ".local/state")
+        data_dir = Path(data_dir_raw).expanduser().resolve() if data_dir_raw else (state_home / "knowledge-management").expanduser().resolve()
 
         # 4. Live marimo dependency check
         marimo_host = env.get("KNOWLEDGE_MARIMO_HOST") or ui_host
