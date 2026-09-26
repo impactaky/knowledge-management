@@ -1,0 +1,6 @@
+# Storeのagent設定
+
+- Session開始時に選択済みCatalogを読み、その読み取り規則に従う。Federation MCP接続時は `get_catalog` を使い、選択済みstoreと一致することを確認する。Package参照はCatalogのentryから解決し、file入口を読み、directory入口では必要な原文を選ぶ。
+- 技術調査や記事再利用の前に `federation_search(query, deep)` で既存知識を探し、採用する候補の原文を読む。
+- Order implementation workerはorder、対象repositoryのinstructions、orderが明示参照する文書だけを使う。Orderが要求しない限り `get_catalog` と `federation_search` を呼ばず、外部Packageが不足したら親へ報告する。
+- CatalogやPackageの内容をinstruction fileへ複製せず、参照で保持する。

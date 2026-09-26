@@ -15,3 +15,5 @@ Read the [model overview](CONTEXT.md) for vocabulary, the
 - [Federation Core](integrations/federation-core/README.md) — カタログ駆動検索コアの契約
 - [Federation MCP](integrations/federation-mcp/README.md) — MCP stdio プロバイダ
 - [Checker](tools/knowledge-ui/check.py) — カタログ・リンク・語彙・主張の静的検証
+- [Agent setup](docs/agent-setup.md) — Storeの共有agent instructions
+- [Store changes](docs/store-changes.md) — Store側で適用する変更

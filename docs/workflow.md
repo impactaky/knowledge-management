@@ -72,9 +72,10 @@ updates and local conventions stay separate. See
 Do not edit an upstream copy in place or publish a skill under the upstream name.
 
 Resolve relative references from each skill's actual location, not the working
-directory or a registration alias. Preserve the checkout's relative layout:
-support references resolve back to its `foundation/` and `docs/` directories.
-Do not copy a SKILL.md alone. For articles intended for this repository, use
+directory or a registration alias. Install each complete skill directory with your
+usual skill tool; do not copy a SKILL.md alone. Resolve `shared-rules` references
+through the selected Catalog and `knowledge-management` references from its checkout.
+For articles intended for this repository, use
 its root Catalog; keep private knowledge in a separately selected store.
 Select the Catalog through user or repository instructions, explicit tool
 configuration, or `FEDERATION_CATALOG` / `KNOWLEDGE_CATALOG`. Read it through the

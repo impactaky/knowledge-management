@@ -53,7 +53,7 @@ interviewed: 2026-01-01
 
 ## コミット
 
-[知識の更新規約](../../../foundation/docs/knowledge-changes.md)に従い、並行編集と本文・主張行・参照元の整合性を確認する。
+shared-rules の `docs/knowledge-changes.md`に従い、並行編集と本文・主張行・参照元の整合性を確認する。
 
 1回の記事コミットに記事内`claims`を含む記事本体・画像等のアセット・凍結ビューだけを含める。新テーマもdirectoryを作るだけで一覧へ追記しない。読書マップ、CONTEXT、ADR、タスク、無関係な記事変更を混ぜない。
 

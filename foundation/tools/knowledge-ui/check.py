@@ -98,7 +98,18 @@ def main() -> int:
     args = parser.parse_args()
     if args.local_only:
         print("Scope: local packages and local anchors only; external stores not read")
-    findings = check(resolve_catalog_path(args.catalog), local_only=args.local_only)
+    catalog_path = resolve_catalog_path(args.catalog)
+    checkout = Path(__file__).resolve().parents[3]
+    if not catalog_path.resolve().is_relative_to(checkout):
+        try:
+            packages = indexer.parse_catalog(catalog_path)
+        except (OSError, ValueError):
+            packages = []
+        if not any(p["root"].resolve() == checkout / "foundation" for p in packages):
+            print("Advisory: missing shared-rules entry for this checkout; add to Catalog Packages:")
+            print(f"- [shared-rules]({checkout / 'foundation/INDEX.md'}) — Shared rules")
+            print("See shared-rules の docs/store-changes.md for store-side changes.")
+    findings = check(catalog_path, local_only=args.local_only)
     for finding in findings:
         print(f"{finding.path}:{finding.line}: {finding.code}: {finding.detail}")
     print(f"Knowledge check: {len(findings)} issue(s)")

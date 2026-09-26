@@ -44,10 +44,7 @@ paths and `file:` URLs are accepted; other URL schemes are rejected. An explicit
 external package is a deliberate read authorization, not an implicit store.
 Symlink targets cannot escape the package or reopen excluded work directories.
 
-To make your own store, copy `examples/minimal/` outside this tooling checkout,
-replace its synthetic files and select its Catalog. Initialize its Git history
-separately if you want article commits. The sample's deliberately tracked draft
-and worklog are fixtures; new drafts and worklogs are ignored by its `.gitignore`.
+Use [templates/store/](../templates/store/) as described in [Create your store](../README.md#create-your-store).
 
 ## Configuration reference
 
@@ -75,7 +72,7 @@ and worklog are fixtures; new drafts and worklogs are ignored by its `.gitignore
 | `UI_HOST`, `UI_PORT` | Browser bind address/port, default `127.0.0.1:7776` |
 | `KNOWLEDGE_UI_BASE_URL` | Base URL used by the article URL helper |
 | `UV_CACHE_DIR`, `DENO_DIR` | Set to checkout `.cache/uv` and `.cache/deno` for local caches |
-| `KNOWLEDGE_DATA_DIR` | Runtime logs and live notebook state; default checkout `.data` |
+| `KNOWLEDGE_DATA_DIR` | Runtime logs and live notebook state; default `${XDG_STATE_HOME:-$HOME/.local/state}/knowledge-management` |
 | `TMPDIR` | Optional location for machine-local indexing lock files and temporary work |
 
 Accepted boolean values for all feature flags are `1`/`0`, `true`/`false`, `yes`/`no`, and `on`/`off` (case-insensitive).
@@ -97,10 +94,11 @@ and child cleanup on exit or termination signals:
 bash foundation/tools/knowledge-ui/run.sh
 
 # Launch with an explicit environment file:
-bash foundation/tools/knowledge-ui/run.sh --env-file /path/to/store/runtime.env
+bash foundation/tools/knowledge-ui/run.sh --env-file /home/you/.config/knowledge-management/runtime.env
 ```
 
-`run.sh` delegates `--env-file` directly to `uv run --env-file`. Values already
+`run.sh` loads `${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/runtime.env`
+when present; an explicit `--env-file` wins. It delegates the selected file to `uv run --env-file`. Values already
 present in the process environment take precedence over file contents.
 A template environment file is available at `.env.example`.
 
@@ -184,8 +182,9 @@ uv run --locked --project foundation/tools/knowledge-ui python foundation/integr
 
 The last command waits for MCP stdio messages. Configure your client's MCP server
 with the following structure, substituting your own absolute checkout and Catalog
-paths. `--directory` makes script resolution independent of the client's cwd.
-MCP and UI can share the same `.env` file via uv's `--env-file`. MCP stays a pure
+paths (replace the runtime.env path with your XDG_CONFIG_HOME location if set;
+JSON does not expand shell variables). `--directory` makes script resolution independent of the client's cwd.
+MCP and UI can share the same `runtime.env` file via uv's `--env-file`. MCP stays a pure
 client of configured backends and does not acquire launch duties.
 Do not send UI logs to the MCP process's stdout.
 
@@ -198,7 +197,7 @@ Do not send UI logs to the MCP process's stdout.
         "run", "--locked",
         "--directory", "/path/to/checkout",
         "--project", "foundation/tools/knowledge-ui",
-        "--env-file", "/path/to/store/runtime.env",
+        "--env-file", "/home/you/.config/knowledge-management/runtime.env",
         "python", "foundation/integrations/federation-mcp/server.py"
       ],
       "env": {

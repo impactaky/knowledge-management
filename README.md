@@ -7,8 +7,8 @@ Users and organizations manage their actual knowledge in separate stores configu
 selecting their own Catalog.
 
 Core, MCP, the browser, indexer, checker, Hermes memory provider, and the knowledge,
-delivery and agent workflows are implemented here. The bundled store contains
-only synthetic examples.
+delivery and agent workflows are implemented here. The sample store contains
+only synthetic examples; the root Catalog and articles are for repository maintainers.
 **Repository creation has been authorized by the author; project license remains undecided.**
 No project-wide license is granted by this repository; see [provenance and notices](docs/provenance.md).
 
@@ -40,7 +40,31 @@ needed for browsing, live claim/entrance search, explicit grep, or checking.
 - [Synthetic Catalog](examples/minimal/CATALOG.md)
 - [Extraction scope and acceptance evidence](docs/extraction.md)
 
-## Work with this repository's articles
+## Create your store
+
+From this checkout, after installing the [prerequisites and browser assets](docs/setup.md#local-environment):
+
+```bash
+cp -R templates/store /path/to/my-knowledge
+git -C /path/to/my-knowledge init
+git -C /path/to/my-knowledge add .
+git -C /path/to/my-knowledge add -f drafts/.gitkeep
+mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management"
+cp .env.example "${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/runtime.env"
+```
+
+Set `shared-rules` in the new `CATALOG.md` to this checkout's absolute
+`foundation/INDEX.md` path, and set `FEDERATION_CATALOG` in `runtime.env` to the
+new Catalog. Install skills with your usual [skill tool](docs/workflow.md#skill-setup),
+[register MCP](docs/setup.md#core-and-mcp), then start the UI with
+`bash foundation/tools/knowledge-ui/run.sh`.
+
+To update: `git pull` this checkout, update installed skills (for example
+`npx skills update`), run
+`uv run --locked --project foundation/tools/knowledge-ui python foundation/tools/knowledge-ui/check.py --catalog /path/to/my-knowledge/CATALOG.md`, and read
+[store-changes.md](foundation/docs/store-changes.md) if it reports an advisory.
+
+## Work with this repository's articles (maintainers only)
 
 The root [CATALOG.md](CATALOG.md) selects this repository's mechanisms and
 `articles/`. It is distinct from the synthetic sample. Draft new articles in

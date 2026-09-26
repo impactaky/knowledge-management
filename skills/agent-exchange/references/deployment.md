@@ -46,9 +46,11 @@ machine-specific path to a unit.
 
 ## Install the systemd user units
 
+Run from the installed skill directory.
+
 ```bash
-skills/agent-exchange/scripts/install-systemd.sh --dry-run   # review
-skills/agent-exchange/scripts/install-systemd.sh             # write units
+scripts/install-systemd.sh --dry-run   # review
+scripts/install-systemd.sh             # write units
 systemctl --user daemon-reload
 systemctl --user enable --now herdr-agent-exchange.service agent-exchange-launcher.service
 ```

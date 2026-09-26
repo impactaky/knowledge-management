@@ -5,7 +5,7 @@ description: Clarify a research question or design, test terms and boundaries, a
 
 # Grill, federated
 
-Read [Skill setup](../../docs/workflow.md#skill-setup) before starting to resolve
+Read knowledge-management の `docs/workflow.md#skill-setup` before starting to resolve
 the environment's execution methods and required capabilities.
 
 Read the explicitly selected Catalog through an available adapter or directly at
@@ -33,6 +33,6 @@ have one canonical location and references elsewhere. Moving a definition does
 not broaden its applicability. Update the Catalog or optional INDEX only when
 reading conditions or navigation to rules change, not for every new document.
 
-Use [knowledge changes](../../foundation/docs/knowledge-changes.md) for coherent
+Use shared-rules の `docs/knowledge-changes.md` for coherent
 references and commit boundaries. Do not force this interview into a complete
 `summarize-source` input or an ordinary article review.

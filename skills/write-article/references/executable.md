@@ -17,10 +17,10 @@
 ドラフト中は `.py` を直接編集し、またはproject内に導入したmarimo editorを使い、必要なら使い捨てHTMLを `drafts/__marimo__/` へ生成する。ストック時はプレビューを流用せず、次の形で凍結ビューを生成し直す。
 
 ```bash
-uv run --project foundation/tools/knowledge-ui --extra notebook marimo export html --sandbox --no-include-code article.py -o __marimo__/article.html
+uv run --project /path/to/knowledge-ui --extra notebook marimo export html --sandbox --no-include-code /absolute/path/to/article.py -o /absolute/path/to/__marimo__/article.html
 ```
 
 凍結ビューは正本ではない派生物で、ストックと差し替え・改稿時だけ再生成する。表示のためのオンデマンド再実行はしない。
 
-コマンドはtooling checkoutで実行し、記事パスは絶対パスを渡してよい。
+`/path/to/knowledge-ui` は選択済みCatalogの shared-rules の `tools/knowledge-ui/` から解決する。
 外部のmarimo skillsは任意であり、このworkflowの必須依存ではない。

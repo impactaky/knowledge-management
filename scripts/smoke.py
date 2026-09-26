@@ -77,7 +77,8 @@ def main():
         assert json.loads(run(['-m', 'federation_core', 'grep', 'UNIT_REQUIRED']))['fulltext_results']
         print('Core CLI: Catalog, shallow candidates and explicit grep passed')
         checked = run([str(UI / 'check.py')]).strip()
-        assert checked == 'Knowledge check: 0 issue(s)'
+        assert checked.splitlines()[-1] == 'Knowledge check: 0 issue(s)'
+        assert 'Advisory: missing shared-rules' in checked
         print(checked)
         docs = json.loads(run([str(UI / 'indexer.py'), '--dry-run']))
         assert len(docs['entries']) == 3 and len(docs['chunks']) == 3
