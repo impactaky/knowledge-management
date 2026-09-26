@@ -1,5 +1,7 @@
 # knowledge-management
 
+[日本語](README.ja.md)
+
 Shared tools for keeping knowledge that people and AI agents can create, review,
 search and browse: the core, MCP server, browser UI, indexer, checker, agent
 skills and shared rules. Your own knowledge lives in a separate private store

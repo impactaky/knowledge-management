@@ -7,6 +7,7 @@
 - Tests must use synthetic fixtures and must not depend on the developer's active catalog or running services.
 - Keep examples self-contained. Do not introduce links or defaults pointing to a developer's private filesystem, network, or repositories.
 - Before publishing, review the complete tracked file set and Git history. A string scan is useful evidence, not proof that all private information has been removed.
+- When changing `README.md` or `README.ja.md`, update the other in the same change so their content matches.
 
 ## Portable skills
 
