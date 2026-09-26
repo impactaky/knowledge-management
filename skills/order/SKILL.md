@@ -67,10 +67,10 @@ order開始時に実装者とnative引数を一度だけ解決し、結果をCon
 
 capability-routerはoptionalな依存で、order skillはrouterの公開CLIの形だけに依存し、router本体や利用者の実configの変換表を変更しない。公開repositoryは https://github.com/impactaky/capability-router 。
 
-1. capability-routerのskill（`SKILL.md`と、それと同じdirectoryの`criteria.md`）の基準に従い、orderのGoalとWorkから9項目の要求levelを見積もる。見積もりが終わるまでrouterのmodel表を見ない（capability-routerのskillの規則）。
-2. `capability-router route --levels <9項目> --mode <config の [route] mode> --label <orderのslug> --print-log-id "<orderのGoal>"`を呼ぶ。stdout 1行は`<config> <service> <log-id>`で、logを書かなかったときのlog-idは`-`。選べないときは終了コード1でstderrにエラーを返す。
+1. capability-routerのskillの手順に従い、orderのGoalとWorkから能力定義の全項目の要求levelを見積もる。見積もりが終わるまでrouterのmodel表を見ない（capability-routerのskillの規則）。
+2. `capability-router route --levels <全項目> --mode <config の [route] mode> --label <orderのslug> --print-log-id "<orderのGoal>"`を呼ぶ。stdout 1行は`<config> <service> <log-id>`で、logを書かなかったときのlog-idは`-`。選べないときは終了コード1でstderrにエラーを返す。
 3. `resolve-config.py --route <config> <service>`で`kind`と引数に変換する。
-4. Contextに、選択元`route`、9項目のlevel、mode、routeの出力（config、service、log-id）、変換した`kind`と引数、configのpathを記録する。
+4. Contextに、選択元`route`、全項目のlevel、mode、routeの出力（config、service、log-id）、変換した`kind`と引数、configのpathを記録する。
 5. capability-routerが無い・終了コードが0でない・変換表に無いconfig/serviceのときは、起動前にblockerとして停止する。既定の`[implementation]`や別の候補へ黙って切り替えない。
 
 routerのサービスidの一覧はorder skillに固定せず、configの変換表に無いidはblockerとして停止する。`[route]`を有効にしないときはrouterを呼ばず、優先順位4の既定`[implementation]`を使い、kind別の起動準備を含めてこれまでと同じに動く。
@@ -109,7 +109,7 @@ example-service = ["--model", "example-model"]
 
 `enabled = true`なのに`[route.services]`か`[route.configs]`が空の場合、`[route.configs.<id>]`が`[route.services]`に無いサービスを参照する場合、その値が文字列配列でない場合は起動前にblockerとして停止する。`--route <config> <service>`は既存の`--implementation`と同じ形のsnapshotを、`source = "route"`、`implementation`と`label`を`null`、追加の`route_config`と`route_service`のkey付きで返す。`[route]`が無いか`enabled = false`の場合、変換表に無い組の場合、`--list`や`--implementation`と同時に使った場合はエラーとなり起動前に停止する。`[route]`が無いconfigの`route`は`enabled = false`、`mode = "balanced"`として扱う。
 
-Contextへは選択元（明示指定 / config / route）と、configから解決した場合は選択した候補名`implementation`と`label`、解決した`kind`、順序を保った引数配列、解決したconfigの絶対pathを記録する。routeで解決した場合は9項目のlevel、mode、config、service、log-idと、変換した`kind`と引数も記録する。inline既定を使った場合は`implementation`と`label`を`null`として記録する。選択はorder開始時に凍結し、進行中のconfig変更を反映しない。
+Contextへは選択元（明示指定 / config / route）と、configから解決した場合は選択した候補名`implementation`と`label`、解決した`kind`、順序を保った引数配列、解決したconfigの絶対pathを記録する。routeで解決した場合は全項目のlevel、mode、config、service、log-idと、変換した`kind`と引数も記録する。inline既定を使った場合は`implementation`と`label`を`null`として記録する。選択はorder開始時に凍結し、進行中のconfig変更を反映しない。
 
 実装対象がGit repository rootであることと、開始commitを確認する。次のcommandで隔離worktreeを作り、JSONからworkspace ID、root pane ID、worktree pathを読む。IDやpathを推測しない。
 
