@@ -32,7 +32,7 @@ cp -R templates/store ~/my-knowledge
 git -C ~/my-knowledge init
 ```
 
-`~/my-knowledge/CATALOG.md` の `shared-rules` のpathを、このcheckoutの絶対pathである `foundation/INDEX.md` に変更します:
+`~/my-knowledge/CATALOG.md` の `shared-rules` のpathを、このcheckoutの `foundation/INDEX.md` の絶対pathに変更します:
 
 ```markdown
 - [shared-rules](/home/you/knowledge-management/foundation/INDEX.md) — …
