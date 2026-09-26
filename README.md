@@ -47,8 +47,6 @@ From this checkout, after installing the [prerequisites and browser assets](docs
 ```bash
 cp -R templates/store /path/to/my-knowledge
 git -C /path/to/my-knowledge init
-git -C /path/to/my-knowledge add .
-git -C /path/to/my-knowledge add -f drafts/.gitkeep
 mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management"
 cp .env.example "${XDG_CONFIG_HOME:-$HOME/.config}/knowledge-management/runtime.env"
 ```
