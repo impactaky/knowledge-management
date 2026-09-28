@@ -142,7 +142,14 @@ single order, and `--route ROUTE_CONFIG SERVICE` to resolve a router pair (all
 mutually exclusive). A registry-only config without a default still lists and
 selects, while default resolution, a missing or invalid config, an unknown name
 and an ambiguous default stop the order before any agent starts. There is no
-built-in kind or model and no fallback to another candidate. See
+built-in kind or model and no fallback to another candidate. The optional
+`[context] project_rules` names an absolute path template, whose only
+placeholder `{repo}` expands to the real-path basename of the target
+repository, for per-project rules. The skill's `scripts/build-prompt.py` joins
+the worker prefix, those rules and the order body into the first prompt and
+saves it as `prompt.md` beside the order; a missing config or rules file is
+skipped with a notice, while an invalid config or a failed save stops before
+sending. See
 [order config example](../skills/order/config.example.toml).
 
 Agent Exchange separates two user files with different purposes:

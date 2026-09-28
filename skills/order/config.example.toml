@@ -78,6 +78,14 @@ session = "agent-exchange"
 # [worklog]
 # root = "/absolute/path/to/worklog/root"
 
+# Optional project rules injected into the first worker prompt by
+# scripts/build-prompt.py. A single absolute path template; the only placeholder
+# is {repo}, expanded to the basename of the real path passed as --repo. The
+# path below is fictional. A missing file is skipped with a notice; a relative
+# path, another placeholder or a non-string value is an error.
+# [context]
+# project_rules = "/absolute/path/to/project-rules/{repo}.md"
+
 # Legacy compatibility: an inline default resolves with its prior fields and
 # reports a null implementation name and label. It can coexist with the
 # [implementations.*] candidates above: --list still returns those candidates,

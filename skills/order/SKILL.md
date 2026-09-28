@@ -93,6 +93,13 @@ args = ["--model", "another-example-model", "--effort", "high"]
 
 解決とschema検証は、このSKILL.mdと同じdirectoryの`scripts/resolve-config.py`を実行して一貫して行い、機械可読なsnapshotを得る。全操作で全ての候補と既定を検証し、`kind`が空でない文字列であること、`args`が文字列配列であることを確認する。configが存在しない、または存在して不正なTOML、`[implementation]`も`[implementations]`もない、混在した既定形式、存在しない既定参照、不正な候補表、空の名前・`label`・`kind`、文字列配列でない`args`のいずれかである場合は、起動前にblockerとして停止する。ただし`[implementations]`があり既定だけがないconfigは、列挙と明示選択が成功し、既定解決だけが「既定がない」としてblockerになる。`--implementation`で指定した名前が存在しない場合もblockerとして停止し、既定や別候補へfallbackしない。`kind`がHerdrと対象CLIに受理されるかの判断はHerdrとCLIを正とし、orderはkind候補の固定リストを持たない。modelやreasoning effortの意味もorderは解釈せず、利用者がnative引数で指定した値だけを渡す。
 
+任意の`[context] project_rules`は、初回worker promptに注入するproject別ルール本文の絶対pathテンプレートである。placeholderは`{repo}`だけを許し、`--repo`に渡したpathを実path化したbasenameへ展開する。相対path、`{repo}`以外の`{...}`、非文字列、tableでない`[context]`は、config読込で全操作共通に検証され、起動前にblockerとして停止する。`build-prompt.py`は展開後のファイルが無ければrules節を省いてstderrにnoticeを出し、存在するが読めなければ停止する。`project_rules`は解決前のテンプレート文字列のまま、未設定なら`null`としてsnapshotに含まれる。
+
+```toml
+[context]
+project_rules = "/absolute/path/to/project-rules/{repo}.md"
+```
+
 明示指定も名前指定もなく`[route] enabled = true`のときは、`resolve-config.py --route`でrouterの組を解決する。`[route]`は次の形をとり、全操作で`resolve-config.py`が検証する。
 
 ```toml
@@ -158,18 +165,17 @@ herdr --session <session> agent start \
 
 worktree integration直後の`agent_pane_busy`だけは、同じ`agent start`を最大60秒再試行してよい。他の起動失敗では`order_path`のorder文書とworktreeを残して停止し、別のkind・model・実装者へ自動fallbackしない。
 
-初回promptには`order_path`の`order.md`から固定済みの本文をそのまま埋め込み、全体の実装、test、diff review、review可能なcommitまで依頼する。file pathだけをworkerへ渡して読ませる方式にせず、本文をpromptへ含める。promptでは応答Agentを、連合解決と設計を完了した親sessionから自己完結したorderを受け取る **order implementation worker** と明示する。workerはorder、対象repositoryのinstructions、orderが明示的に参照する文書だけを外部contextとし、orderが明示的に要求しない限り`get_catalog`や`federation_search`を呼ばない。必要な外部Packageがorderに欠けていれば、自律的に連合を探索せずblockerとして親sessionへ返す。対象repository内のcode・test・docsを調べる通常の実装作業はこの制限に含めない。
-
-workerはorderに明記された作業ログの絶対pathを使う。実行ツールに`AGENT_WORKLOG_DIR`が継承されない場合も同じpathを使い、必要なcommandで同変数を設定して、既存directoryへ書き込めることを実装前に確認する。orderのpath指定がない、envと矛盾する、directoryが存在しない、または書けない場合はblockerとして返す。暗黙の別directory生成やグローバル設定変更は行わない。
+初回promptは、`order_path`の`order.md`本文だけでなく、同じdirectoryの`scripts/build-prompt.py`が組み立てる固定前置きとproject rulesを含める。file pathだけをworkerへ渡して読ませる方式にせず、本文をpromptへ含める。前置きは、応答Agentを、連合解決と設計を完了した親sessionから自己完結したorderを受け取る **order implementation worker** と明示し、外部contextの制限、`AGENT_WORKLOG_DIR`の確認を含む作業ログ規則、汎用の作業既定を定める。前置きの本文は同じdirectoryの`worker-prompt.md`を正とし、このSKILL.mdには重複させない。親sessionが知るべき事実は、workerがorder・対象repositoryのinstructions・project rules・orderが明示的に参照する文書だけを外部contextとし、orderが明示的に要求しない限り`get_catalog`や`federation_search`を呼ばないこと、必要な外部Packageがorderに欠けるときは自律的に連合を探索せずblockerとして親sessionへ返すことである。対象repository内のcode・test・docsを調べる通常の実装作業はこの制限に含まれない。
 
 Agentはこのorder専用とし、元セッション以外からpromptしない。
 
 ## 3. Background terminalで待ち、同じcommandの結果を回収する
 
-初回のpromptは、このSKILL.mdと同じdirectoryの`scripts/prompt-wait.py`を使う次の一つのcommandで渡し、Background terminalへ預ける。promptはstdinから一つの引数として`herdr agent prompt --wait`へ渡り、shellで再評価されない。
+初回のpromptは、同じdirectoryの`scripts/build-prompt.py`で組み立て、そのstdoutを`scripts/prompt-wait.py`へpipeで渡す次の一つのcommandで送り、Background terminalへ預ける。`build-prompt.py --order "$order_path" --repo <repo>`は、`worker-prompt.md`の前置き、解決済みconfigの任意`[context] project_rules`（あれば展開後の本文）、`order_path`の`order.md`本文をこの順で連結し、同じ内容を`order_path`と同じdirectoryの`prompt.md`へ保存してからstdoutへ出す。`--repo`にはworktreeではなく元のrepository rootを渡し、`{repo}`はその実path basenameへ展開する。configは`--config`、`ORDER_CONFIG`、XDG、HOMEの順で解決し、configファイルが無ければrulesなしで続行してstderrにnoticeを出す。configが存在して不正、または`prompt.md`を保存できない場合は何も出力せずに停止するので、送ったpromptと記録が食い違わない。promptはstdinから一つの引数として`herdr agent prompt --wait`へ渡り、shellで再評価されない。
 
 ```bash
-printf '%s' "$prompt" | python3 <order-skill-dir>/scripts/prompt-wait.py --session <session> "$agent"
+python3 <order-skill-dir>/scripts/build-prompt.py --order "$order_path" --repo <repo> \
+  | python3 <order-skill-dir>/scripts/prompt-wait.py --session <session> "$agent"
 ```
 
 `herdr agent prompt --wait`と`herdr agent wait`は、既定のsettled状態である`idle`、`done`、`blocked`の最初の観測で返る。統合によっては作業開始直後に一時的なsettled状態を報告し、作業中なのに返ることがある（例: OpenCode v2 TUIの新しいsessionの最初のturn）。`prompt-wait.py`はsettled返却後に短く待って`agent get`で状態を確かめ、`working`に戻っていれば`agent wait`をかけ直し、settled状態が保たれてから確認時の`agent get`のJSONを出力する。Herdrのerror（`agent_prompt_stalled`、`agent_blocked`、timeoutなど）はそのまま終了statusとともに返し、再待機しない。`--timeout <ms>`は待機全体の上限で、省略時は無期限。`herdr agent prompt --wait`や`herdr agent wait`を直接使わず、`--until`で同じ状態を重ねない。実行ツールがsession handleを返しても、commandが実行中ならAgentの終端状態を得たことにはならない。
