@@ -81,6 +81,7 @@ def run_shell_test(relative: str) -> None:
     "agent-exchange/tests/test-systemd.sh",
     "order/tests/test-resolve-config.sh",
     "order/tests/test-prompt-wait.sh",
+    "order/tests/test-build-prompt.sh",
 ])
 def test_shell_contracts_run_in_isolation(relative):
     run_shell_test(relative)
