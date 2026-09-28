@@ -21,12 +21,19 @@ An optional ``[route]`` section enables selection through an external router.
 arguments. ``--route ROUTE_CONFIG SERVICE`` resolves one such pair; it is an
 error unless ``[route]`` exists with ``enabled = true``. The router itself is
 never invoked here.
+
+An optional ``[context] project_rules`` is an absolute path template for
+per-project rules injected into the first worker prompt. The only placeholder is
+``{repo}``; it is reported unexpanded in the snapshot. A non-string, a relative
+path, an unsupported placeholder or a non-table ``[context]`` is an error for
+every operation.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -116,6 +123,25 @@ def parse_default(data: dict, candidates: dict[str, dict]) -> dict | None:
     if not isinstance(args, list) or any(not isinstance(arg, str) for arg in args):
         raise ConfigError("implementation args must be an array of strings")
     return {"form": "inline", "kind": kind, "args": list(args)}
+
+
+def parse_context(data: dict) -> str | None:
+    section = data.get("context")
+    if section is None:
+        return None
+    if not isinstance(section, dict):
+        raise ConfigError("[context] must be a table")
+    template = section.get("project_rules")
+    if template is None:
+        return None
+    if not isinstance(template, str) or not template.startswith("/"):
+        raise ConfigError("context project_rules must be an absolute path string")
+    for placeholder in re.findall(r"\{[^}]*\}", template):
+        if placeholder != "{repo}":
+            raise ConfigError(
+                f"context project_rules has an unsupported placeholder: {placeholder}"
+            )
+    return template
 
 
 def parse_route(data: dict) -> dict | None:
@@ -219,6 +245,7 @@ def load(path: Path) -> dict:
 
     return {
         "config_path": str(path.resolve()),
+        "project_rules": parse_context(data),
         "session": session,
         "worklog_root": worklog_root,
         "candidates": candidates,
@@ -238,6 +265,7 @@ def list_snapshot(config: dict) -> dict:
     default_name = default["name"] if default is not None and default["form"] == "name" else None
     return {
         "config_path": config["config_path"],
+        "project_rules": config["project_rules"],
         "default": default_name,
         "implementations": [dict(candidate) for candidate in config["candidates"].values()],
         "route": route_summary(config["route"]),
@@ -275,6 +303,7 @@ def resolve_snapshot(config: dict, requested: str | None) -> dict:
     return {
         "source": "config",
         "config_path": config["config_path"],
+        "project_rules": config["project_rules"],
         "kind": kind,
         "args": args,
         "session": config["session"],
@@ -301,6 +330,7 @@ def route_snapshot(config: dict, route_config: str, service: str) -> dict:
     return {
         "source": "route",
         "config_path": config["config_path"],
+        "project_rules": config["project_rules"],
         "kind": route["services"][service],
         "args": route["configs"][route_config][service],
         "session": config["session"],

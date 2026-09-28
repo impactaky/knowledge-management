@@ -436,4 +436,68 @@ for bad_case in \
     fi
 done
 
+# --- Optional context project rules ----------------------------------------
+
+# project_rules is absent by default and reported as null in every snapshot.
+run_resolver "$named" '' '' '' --list
+assert_eq "$(jq -r '.project_rules' <<<"$resolver_out")" null 'list project_rules defaults to null'
+run_resolver "$named" '' '' ''
+assert_eq "$(jq -r '.project_rules' <<<"$resolver_out")" null 'resolve project_rules defaults to null'
+run_resolver "$route_config" '' '' '' --route example-config another-service
+assert_eq "$(jq -r '.project_rules' <<<"$resolver_out")" null 'route project_rules defaults to null'
+
+# A configured template is surfaced unexpanded, with {repo} intact, for list,
+# resolve and route alike.
+context_config="$test_root/context.toml"
+write_config "$context_config" \
+    '[implementation]' 'kind = "k"' 'args = []' \
+    '[context]' 'project_rules = "/absolute/rules/{repo}.md"' \
+    '[route]' 'enabled = true' \
+    '[route.services]' 'example-service = "example-kind"' \
+    '[route.configs."example-config"]' 'example-service = []'
+run_resolver "$context_config" '' '' '' --list
+[[ "$resolver_status" -eq 0 ]] || fail "--list with [context] failed: $(cat "$test_root/stderr")"
+assert_eq "$(jq -r '.project_rules' <<<"$resolver_out")" '/absolute/rules/{repo}.md' \
+    'list project_rules template'
+run_resolver "$context_config" '' '' ''
+assert_eq "$(jq -r '.project_rules' <<<"$resolver_out")" '/absolute/rules/{repo}.md' \
+    'resolve project_rules template'
+run_resolver "$context_config" '' '' '' --route example-config example-service
+assert_eq "$(jq -r '.project_rules' <<<"$resolver_out")" '/absolute/rules/{repo}.md' \
+    'route project_rules template'
+
+# A relative path, an unsupported placeholder, a non-string, an empty string
+# and a non-table [context] all fail for list and resolution with no traceback.
+for bad_case in \
+    'context-not-table.toml|context = "x"\n[implementation]\nkind = "k"\nargs = []' \
+    'context-rules-relative.toml|[implementation]\nkind = "k"\nargs = []\n[context]\nproject_rules = "relative/{repo}.md"' \
+    'context-rules-placeholder.toml|[implementation]\nkind = "k"\nargs = []\n[context]\nproject_rules = "/absolute/{other}.md"' \
+    'context-rules-number.toml|[implementation]\nkind = "k"\nargs = []\n[context]\nproject_rules = 5' \
+    'context-rules-empty.toml|[implementation]\nkind = "k"\nargs = []\n[context]\nproject_rules = ""'; do
+    name="${bad_case%%|*}"
+    body="${bad_case#*|}"
+    path="$test_root/$name"
+    printf '%b\n' "$body" >"$path"
+    run_resolver "$path" '' '' ''
+    [[ "$resolver_status" -ne 0 ]] || fail "bad context config was accepted on resolve: $name"
+    run_resolver "$path" '' '' '' --list
+    [[ "$resolver_status" -ne 0 ]] || fail "bad context config was accepted on list: $name"
+    if grep -F 'Traceback' "$test_root/stderr" >/dev/null; then
+        fail "bad context config produced a traceback: $name"
+    fi
+done
+
+# The route path validates [context] too, not only resolution.
+bad_route_context="$test_root/context-route.toml"
+write_config "$bad_route_context" \
+    '[implementation]' 'kind = "k"' 'args = []' \
+    '[context]' 'project_rules = "relative/{repo}.md"' \
+    '[route]' 'enabled = true' \
+    '[route.services]' 'example-service = "example-kind"' \
+    '[route.configs."example-config"]' 'example-service = []'
+run_resolver "$bad_route_context" '' '' '' --route example-config example-service
+[[ "$resolver_status" -ne 0 ]] || fail '--route accepted a bad [context]'
+grep -F 'project_rules' "$test_root/stderr" >/dev/null ||
+    fail 'route context error reason is unclear'
+
 printf 'ok - order config resolver tests passed\n'
