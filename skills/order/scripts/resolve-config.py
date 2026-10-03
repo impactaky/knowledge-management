@@ -27,6 +27,14 @@ per-project rules injected into the first worker prompt. The only placeholder is
 ``{repo}``; it is reported unexpanded in the snapshot. A non-string, a relative
 path, an unsupported placeholder or a non-table ``[context]`` is an error for
 every operation.
+
+An optional ``[env] inherit`` lists environment variable names that the session
+running the resolver exports into the implementation agent's pane. The snapshot
+reports the configured names in order as ``inherit`` and the subset that is set
+to a non-empty value in the resolver's own environment as ``env``. A non-table
+``[env]``, a non-array ``inherit``, an empty or whitespace name, a name
+containing ``=``, a duplicate name or the reserved ``AGENT_WORKLOG_DIR`` is an
+error for every operation; values are never interpreted.
 """
 from __future__ import annotations
 
@@ -144,6 +152,44 @@ def parse_context(data: dict) -> str | None:
     return template
 
 
+def parse_env(data: dict) -> list[str]:
+    section = data.get("env")
+    if section is None:
+        return []
+    if not isinstance(section, dict):
+        raise ConfigError("[env] must be a table")
+    inherit = section.get("inherit")
+    if inherit is None:
+        return []
+    if not isinstance(inherit, list) or any(not isinstance(name, str) for name in inherit):
+        raise ConfigError("[env] inherit must be an array of strings")
+    seen: set[str] = set()
+    for name in inherit:
+        if not name or any(char.isspace() for char in name) or "=" in name:
+            raise ConfigError(
+                "env inherit name must be a non-empty string without whitespace "
+                f"or '=': {name!r}"
+            )
+        if name == "AGENT_WORKLOG_DIR":
+            raise ConfigError(
+                "env inherit must not include AGENT_WORKLOG_DIR; "
+                "the skill exports it for the worklog directory"
+            )
+        if name in seen:
+            raise ConfigError(f"env inherit has a duplicate name: {name!r}")
+        seen.add(name)
+    return list(inherit)
+
+
+def env_snapshot(names: list[str]) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for name in names:
+        value = os.environ.get(name)
+        if value:
+            values[name] = value
+    return values
+
+
 def parse_route(data: dict) -> dict | None:
     section = data.get("route")
     if section is None:
@@ -243,6 +289,8 @@ def load(path: Path) -> dict:
                 raise ConfigError("worklog root must be an absolute path string")
             worklog_root = candidate
 
+    inherit = parse_env(data)
+
     return {
         "config_path": str(path.resolve()),
         "project_rules": parse_context(data),
@@ -251,6 +299,8 @@ def load(path: Path) -> dict:
         "candidates": candidates,
         "default": default,
         "route": parse_route(data),
+        "inherit": inherit,
+        "env": env_snapshot(inherit),
     }
 
 
@@ -269,6 +319,8 @@ def list_snapshot(config: dict) -> dict:
         "default": default_name,
         "implementations": [dict(candidate) for candidate in config["candidates"].values()],
         "route": route_summary(config["route"]),
+        "inherit": config["inherit"],
+        "env": config["env"],
     }
 
 
@@ -311,6 +363,8 @@ def resolve_snapshot(config: dict, requested: str | None) -> dict:
         "implementation": name,
         "label": label,
         "route": route_summary(config["route"]),
+        "inherit": config["inherit"],
+        "env": config["env"],
     }
 
 
@@ -339,6 +393,8 @@ def route_snapshot(config: dict, route_config: str, service: str) -> dict:
         "label": None,
         "route_config": route_config,
         "route_service": service,
+        "inherit": config["inherit"],
+        "env": config["env"],
     }
 
 

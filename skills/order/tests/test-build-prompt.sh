@@ -152,6 +152,44 @@ for bad_case in \
     fi
 done
 
+# [env] is validated by the shared loader but does not change the prompt: a
+# valid table still builds and saves, an invalid one writes nothing.
+env_config="$test_root/env.toml"
+write_config "$env_config" \
+    '[implementation]' 'kind = "k"' 'args = []' \
+    '[context]' "project_rules = \"$rules_dir/{repo}.md\"" \
+    '[env]' 'inherit = ["CLAUDE_CONFIG_DIR", "ORDER_TEST_VAR"]'
+run_builder --order "$order" --repo "$repo" --config "$env_config"
+[[ "$builder_status" -eq 0 ]] || fail "[env] build failed: $(cat "$test_root/stderr")"
+assert_eq "$(cat "$test_root/stdout")" "$worker_body
+
+# Project rules
+
+$rules_body
+
+# Order
+
+$order_body" '[env] should not change the prompt'
+cmp -s "$test_root/stdout" "$order_dir/prompt.md" || fail '[env] prompt was not saved'
+
+bad_env_dir="$test_root/bad-env-order"
+mkdir -p "$bad_env_dir"
+bad_env_order="$bad_env_dir/order.md"
+printf '# Synthetic order\n' >"$bad_env_order"
+bad_env_config="$test_root/bad-env.toml"
+write_config "$bad_env_config" \
+    '[implementation]' 'kind = "k"' 'args = []' \
+    '[env]' 'inherit = "CLAUDE_CONFIG_DIR"'
+run_builder --order "$bad_env_order" --repo "$repo" --config "$bad_env_config"
+[[ "$builder_status" -ne 0 ]] || fail 'an invalid [env] was accepted'
+[[ ! -s "$test_root/stdout" ]] || fail 'an invalid [env] wrote to stdout'
+[[ ! -e "$bad_env_dir/prompt.md" ]] || fail 'an invalid [env] saved prompt.md'
+grep -F 'inherit' "$test_root/stderr" >/dev/null ||
+    fail 'an invalid [env] reason is unclear'
+if grep -F 'Traceback' "$test_root/stderr" >/dev/null; then
+    fail 'an invalid [env] produced a traceback'
+fi
+
 # An unwritable prompt.md (a directory in its place) fails with non-zero status
 # and writes nothing to stdout.
 unwritable_dir="$test_root/unwritable"

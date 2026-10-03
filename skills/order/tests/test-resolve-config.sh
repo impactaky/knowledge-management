@@ -41,6 +41,10 @@ run_resolver() {
 
 mkdir -p "$test_root/xdg/knowledge-management" "$test_root/homedir/.config/knowledge-management"
 
+# The inherited-variable cases control these names explicitly per call, so the
+# contract does not depend on the developer's environment.
+unset CLAUDE_CONFIG_DIR ORDER_TEST_VAR
+
 explicit="$test_root/explicit.toml"
 write_config "$explicit" '[implementation]' 'kind = "explicit-kind"' 'args = ["--one"]'
 order_config="$test_root/order-config.toml"
@@ -499,5 +503,109 @@ run_resolver "$bad_route_context" '' '' '' --route example-config example-servic
 [[ "$resolver_status" -ne 0 ]] || fail '--route accepted a bad [context]'
 grep -F 'project_rules' "$test_root/stderr" >/dev/null ||
     fail 'route context error reason is unclear'
+
+# --- Optional inherited environment variables ------------------------------
+
+# The configured inherit list is reported verbatim and in order, and env holds
+# only the names set to a non-empty value in the resolver's own environment.
+# The same contract holds for --list, default resolution, --implementation and
+# --route.
+env_config="$test_root/env.toml"
+write_config "$env_config" \
+    '[implementation]' \
+    'name = "fast-code"' \
+    '[implementations.fast-code]' \
+    'kind = "example-cli"' \
+    'args = ["--model", "example-model"]' \
+    '[route]' \
+    'enabled = true' \
+    '[route.services]' \
+    'example-service = "example-kind"' \
+    '[route.configs."example-config"]' \
+    'example-service = []' \
+    '[env]' \
+    'inherit = ["CLAUDE_CONFIG_DIR", "ORDER_TEST_VAR"]'
+for env_op in '--list|--list' 'default|' '--implementation|--implementation fast-code' '--route|--route example-config example-service'; do
+    env_label="${env_op%%|*}"
+    env_spec="${env_op#*|}"
+    read -r -a env_args <<<"$env_spec"
+    CLAUDE_CONFIG_DIR=/x ORDER_TEST_VAR=y run_resolver "$env_config" '' '' '' "${env_args[@]}"
+    [[ "$resolver_status" -eq 0 ]] || fail "env $env_label failed: $(cat "$test_root/stderr")"
+    assert_eq "$(jq -c .inherit <<<"$resolver_out")" \
+        '["CLAUDE_CONFIG_DIR","ORDER_TEST_VAR"]' "env $env_label inherit order"
+    assert_eq "$(jq -c .env <<<"$resolver_out")" \
+        '{"CLAUDE_CONFIG_DIR":"/x","ORDER_TEST_VAR":"y"}' "env $env_label inherited values"
+done
+
+# An unset name and a name set to the empty string stay in inherit but are
+# omitted from env, so the parent session exports only usable values.
+# ORDER_TEST_VAR is unset above; CLAUDE_CONFIG_DIR is set empty here.
+CLAUDE_CONFIG_DIR="" run_resolver "$env_config" '' '' '' --list
+[[ "$resolver_status" -eq 0 ]] || fail "env empty-value list failed: $(cat "$test_root/stderr")"
+assert_eq "$(jq -c .inherit <<<"$resolver_out")" \
+    '["CLAUDE_CONFIG_DIR","ORDER_TEST_VAR"]' 'empty-value inherit is unchanged'
+assert_eq "$(jq -c .env <<<"$resolver_out")" '{}' 'unset and empty names are omitted from env'
+
+# Without [env] both keys are empty and the rest of the snapshot is unchanged.
+run_resolver "$named" '' '' '' --list
+assert_eq "$(jq -c .inherit <<<"$resolver_out")" '[]' 'no [env] inherit defaults empty'
+assert_eq "$(jq -c .env <<<"$resolver_out")" '{}' 'no [env] env defaults empty'
+assert_eq "$(jq -r .default <<<"$resolver_out")" fast-code 'no [env] keeps other keys'
+run_resolver "$named" '' '' ''
+assert_eq "$(jq -c .inherit <<<"$resolver_out")" '[]' 'no [env] default inherit empty'
+assert_eq "$(jq -c .env <<<"$resolver_out")" '{}' 'no [env] default env empty'
+assert_eq "$(jq -r .kind <<<"$resolver_out")" example-cli 'no [env] default keeps kind'
+
+# An [env] table without inherit behaves like no section.
+empty_env="$test_root/env-empty.toml"
+write_config "$empty_env" '[implementation]' 'kind = "k"' 'args = []' '[env]'
+run_resolver "$empty_env" '' '' '' --list
+[[ "$resolver_status" -eq 0 ]] || fail "empty [env] failed: $(cat "$test_root/stderr")"
+assert_eq "$(jq -c .inherit <<<"$resolver_out")" '[]' 'empty [env] inherit is empty'
+assert_eq "$(jq -c .env <<<"$resolver_out")" '{}' 'empty [env] env is empty'
+
+# A non-table [env], a non-array inherit, and invalid, duplicate or reserved
+# names fail for every operation, with an explicit reason and no traceback.
+for bad_case in \
+    'env-not-table.toml|env = "x"\n[implementation]\nkind = "k"\nargs = []' \
+    'env-inherit-string.toml|[implementation]\nkind = "k"\nargs = []\n[env]\ninherit = "CLAUDE_CONFIG_DIR"' \
+    'env-inherit-number.toml|[implementation]\nkind = "k"\nargs = []\n[env]\ninherit = [1, 2]' \
+    'env-name-empty.toml|[implementation]\nkind = "k"\nargs = []\n[env]\ninherit = [""]' \
+    'env-name-space.toml|[implementation]\nkind = "k"\nargs = []\n[env]\ninherit = ["A B"]' \
+    'env-name-equals.toml|[implementation]\nkind = "k"\nargs = []\n[env]\ninherit = ["A=B"]' \
+    'env-name-dup.toml|[implementation]\nkind = "k"\nargs = []\n[env]\ninherit = ["A", "A"]' \
+    'env-name-worklog.toml|[implementation]\nkind = "k"\nargs = []\n[env]\ninherit = ["AGENT_WORKLOG_DIR"]'; do
+    name="${bad_case%%|*}"
+    body="${bad_case#*|}"
+    path="$test_root/$name"
+    printf '%b\n' "$body" >"$path"
+    run_resolver "$path" '' '' ''
+    [[ "$resolver_status" -ne 0 ]] || fail "bad env config was accepted on resolve: $name"
+    run_resolver "$path" '' '' '' --list
+    [[ "$resolver_status" -ne 0 ]] || fail "bad env config was accepted on list: $name"
+    run_resolver "$path" '' '' '' --implementation fast-code
+    [[ "$resolver_status" -ne 0 ]] || fail "bad env config was accepted on select: $name"
+    grep -F 'order config:' "$test_root/stderr" >/dev/null ||
+        fail "bad env config reason is unclear: $name"
+    if grep -F 'Traceback' "$test_root/stderr" >/dev/null; then
+        fail "bad env config produced a traceback: $name"
+    fi
+done
+
+# The route path validates [env] too, not only resolution, for both an invalid
+# name and the reserved AGENT_WORKLOG_DIR.
+for route_env_name in 'A=B' 'AGENT_WORKLOG_DIR'; do
+    bad_route_env="$test_root/env-route.toml"
+    write_config "$bad_route_env" \
+        '[implementation]' 'kind = "k"' 'args = []' \
+        '[env]' "inherit = [\"$route_env_name\"]" \
+        '[route]' 'enabled = true' \
+        '[route.services]' 'example-service = "example-kind"' \
+        '[route.configs."example-config"]' 'example-service = []'
+    run_resolver "$bad_route_env" '' '' '' --route example-config example-service
+    [[ "$resolver_status" -ne 0 ]] || fail "--route accepted a bad [env]: $route_env_name"
+    grep -F 'order config:' "$test_root/stderr" >/dev/null ||
+        fail "route env error reason is unclear: $route_env_name"
+done
 
 printf 'ok - order config resolver tests passed\n'
