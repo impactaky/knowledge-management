@@ -138,7 +138,7 @@ herdr --session <session> worktree create \
 
 Agent名はworkspace IDをASCII lowercaseへ正規化してから`order-<lowercase-workspace-id>`のように32文字以内で一意にし、root paneでfreshな実装Agentを起動する。workspace ID自体はHerdrから得た元の値を保持し、Agent名だけを正規化する（HerdrのAgent名は小文字英数字・`-`・`_`だけを受け付ける一方、workspace IDには大文字が入り得る）。
 
-起動前にroot paneのshellへ、shell-escapeした`worklog_dir`を`AGENT_WORKLOG_DIR`としてexportする。続けて、解決済みsnapshotの`env`にある各`名前=値`の対も同じ経路でexportする。値は検証も解釈もせずそのまま渡し、`inherit`に列挙されていても未設定または空文字列だった名前はexportしない。export投入に失敗した場合は、実装者のkindを問わず起動しない。このexportはkindを問わず行い、`env`を使わない実装者には無害である。値が使えない場合（login未了やdir不在など）はorderが起動前に検証せず、起動後の`blocked`として既存の手順で診断する。
+起動前にroot paneのshellへ、shell-escapeした`worklog_dir`を`AGENT_WORKLOG_DIR`としてexportする。続けて、解決済みsnapshotの`env`にある各`名前=値`の対も同じ経路でexportする。値は検証も解釈もせずそのまま渡し、`inherit`に列挙されていても未設定または空文字列だった名前はexportしない。export投入に失敗した場合は、実装者のkindを問わず起動しない。このexportはkindを問わず行い、`env`を使わない実装者には無害である。値が使えない場合（login未了やdir不在など）はorderが起動前に検証せず、起動後の`blocked`として既存の手順で診断する。下の`snapshot_env`は、解決済みsnapshotのJSONの`env` object（名前→値）を読み込んだbashの連想配列である。
 
 ```bash
 printf -v export_worklog_dir 'export AGENT_WORKLOG_DIR=%q' "$worklog_dir"

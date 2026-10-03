@@ -93,7 +93,8 @@ session = "agent-exchange"
 # without validation or interpretation, and AGENT_WORKLOG_DIR is reserved by
 # the skill and cannot be listed. A name must be non-empty, contain no
 # whitespace or "=", and not repeat. The order skill has no default variable
-# names; the variable below is a fictional example name.
+# names; CLAUDE_CONFIG_DIR below is an example of a real variable a user may
+# want to carry over, and the skill treats every name opaquely.
 # [env]
 # inherit = ["CLAUDE_CONFIG_DIR"]
 
