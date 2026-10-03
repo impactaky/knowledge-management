@@ -100,6 +100,13 @@ args = ["--model", "another-example-model", "--effort", "high"]
 project_rules = "/absolute/path/to/project-rules/{repo}.md"
 ```
 
+任意の`[env] inherit`は、実装Agentを起動する前にroot paneのshellへ引き継ぐ環境変数名の文字列配列である。名前は空でなく、空白と`=`を含まず、重複せず、必須の`AGENT_WORKLOG_DIR`を含まない。`[env]`がtableでない、`inherit`が文字列配列でない、名前が空か空白か`=`を含む、名前が重複する、`AGENT_WORKLOG_DIR`を含む場合は、全操作で起動前にblockerとして停止する。`[env]`を省略すると引き継ぐ変数は無い。名前も値もorderは既定を持たず、存在確認や意味の解釈をしない。
+
+```toml
+[env]
+inherit = ["CLAUDE_CONFIG_DIR"]
+```
+
 明示指定も名前指定もなく`[route] enabled = true`のときは、`resolve-config.py --route`でrouterの組を解決する。`[route]`は次の形をとり、全操作で`resolve-config.py`が検証する。
 
 ```toml
@@ -116,7 +123,7 @@ example-service = ["--model", "example-model"]
 
 `enabled = true`なのに`[route.services]`か`[route.configs]`が空の場合、`[route.configs.<id>]`が`[route.services]`に無いサービスを参照する場合、その値が文字列配列でない場合は起動前にblockerとして停止する。`--route <config> <service>`は既存の`--implementation`と同じ形のsnapshotを、`source = "route"`、`implementation`と`label`を`null`、追加の`route_config`と`route_service`のkey付きで返す。`[route]`が無いか`enabled = false`の場合、変換表に無い組の場合、`--list`や`--implementation`と同時に使った場合はエラーとなり起動前に停止する。`[route]`が無いconfigの`route`は`enabled = false`、`mode = "balanced"`として扱う。
 
-Contextへは選択元（明示指定 / config / route）と、configから解決した場合は選択した候補名`implementation`と`label`、解決した`kind`、順序を保った引数配列、解決したconfigの絶対pathを記録する。routeで解決した場合は全項目のlevel、mode、config、service、log-idと、変換した`kind`と引数も記録する。inline既定を使った場合は`implementation`と`label`を`null`として記録する。選択はorder開始時に凍結し、進行中のconfig変更を反映しない。
+Contextへは選択元（明示指定 / config / route）と、configから解決した場合は選択した候補名`implementation`と`label`、解決した`kind`、順序を保った引数配列、解決したconfigの絶対pathを記録する。routeで解決した場合は全項目のlevel、mode、config、service、log-idと、変換した`kind`と引数も記録する。inline既定を使った場合は`implementation`と`label`を`null`として記録する。snapshotには`inherit`（configの配列をそのまま順序を保って）と`env`（`inherit`の各名前のうち、`resolve-config.py`を実行したprocessの環境で設定されていて空文字列でないものを名前→値にしたobject）も含まれ、`[env]`が無ければ`inherit`は`[]`、`env`は`{}`になる。選択はorder開始時に凍結し、進行中のconfig変更を反映しない。
 
 実装対象がGit repository rootであることと、開始commitを確認する。次のcommandで隔離worktreeを作り、JSONからworkspace ID、root pane ID、worktree pathを読む。IDやpathを推測しない。
 
@@ -131,11 +138,15 @@ herdr --session <session> worktree create \
 
 Agent名はworkspace IDをASCII lowercaseへ正規化してから`order-<lowercase-workspace-id>`のように32文字以内で一意にし、root paneでfreshな実装Agentを起動する。workspace ID自体はHerdrから得た元の値を保持し、Agent名だけを正規化する（HerdrのAgent名は小文字英数字・`-`・`_`だけを受け付ける一方、workspace IDには大文字が入り得る）。
 
-起動前にroot paneのshellへ、shell-escapeした`worklog_dir`を`AGENT_WORKLOG_DIR`としてexportする。export投入に失敗した場合は起動しない。
+起動前にroot paneのshellへ、shell-escapeした`worklog_dir`を`AGENT_WORKLOG_DIR`としてexportする。続けて、解決済みsnapshotの`env`にある各`名前=値`の対も同じ経路でexportする。値は検証も解釈もせずそのまま渡し、`inherit`に列挙されていても未設定または空文字列だった名前はexportしない。export投入に失敗した場合は、実装者のkindを問わず起動しない。このexportはkindを問わず行い、`env`を使わない実装者には無害である。値が使えない場合（login未了やdir不在など）はorderが起動前に検証せず、起動後の`blocked`として既存の手順で診断する。
 
 ```bash
 printf -v export_worklog_dir 'export AGENT_WORKLOG_DIR=%q' "$worklog_dir"
 herdr --session <session> pane run "$pane" "$export_worklog_dir"
+for inherit_name in "${!snapshot_env[@]}"; do
+  printf -v export_inherited 'export %s=%q' "$inherit_name" "${snapshot_env[$inherit_name]}"
+  herdr --session <session> pane run "$pane" "$export_inherited"
+done
 ```
 
 ### 起動commandとorder必須準備
@@ -229,4 +240,5 @@ Contextにlog-id（`-`以外）がある場合、orderを終えるときに`capa
 - file-based Agent Exchangeは耐久的なfile handoffが必要な別workflowであり、orderから呼ばない。
 - 実装者のkind候補を固定せず、不明なkindでは専用準備を推測しない。
 - capability-routerは`[route]`を有効にしたときだけ使うoptional capabilityであり、無効または省略したconfigではrouterを呼ばない。
+- 実装Agentへ引き継ぐ環境変数の名前は利用者のconfigが決め、orderは既定の変数名も既定の値も持たない。
 - 会社の機密の実体を個人ストアに書かない。

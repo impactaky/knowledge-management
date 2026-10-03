@@ -86,6 +86,17 @@ session = "agent-exchange"
 # [context]
 # project_rules = "/absolute/path/to/project-rules/{repo}.md"
 
+# Optional environment variables carried from the session that runs the order
+# into the implementation agent's pane. Each name in inherit is exported with
+# the parent session's current value before the agent starts; a name that is
+# unset or set to the empty string is skipped. Values are passed through
+# without validation or interpretation, and AGENT_WORKLOG_DIR is reserved by
+# the skill and cannot be listed. A name must be non-empty, contain no
+# whitespace or "=", and not repeat. The order skill has no default variable
+# names; the variable below is a fictional example name.
+# [env]
+# inherit = ["CLAUDE_CONFIG_DIR"]
+
 # Legacy compatibility: an inline default resolves with its prior fields and
 # reports a null implementation name and label. It can coexist with the
 # [implementations.*] candidates above: --list still returns those candidates,
