@@ -219,7 +219,7 @@ settledが返ったら、まず`herdr --session <session> agent read "$agent" --
 
 ## 5. 合格して終了する
 
-合格しても`order_path`の`order.md`を削除せず、worklogの記録として残す。commit、branch、検証結果をユーザへ報告する。worktreeがcleanでcommitがbranchに保持されていることを確認してから、作成したworkspaceを閉じる。
+合格しても`order_path`の`order.md`を削除せず、worklogの記録として残す。commit、branch、検証結果をユーザへ報告する。報告は実装を追っていない人が読める形にする: 今と何が変わったか、新しくできること、実物の図やスクリーンショットと実測の表、実行した検証と差し戻しの有無、未確認のまま残るもの。store が人間向けまとめの型を持つ場合（例: output-style の `summary.md`）はそれに従う。worktreeがcleanでcommitがbranchに保持されていることを確認してから、作成したworkspaceを閉じる。
 
 ```bash
 herdr --session <session> worktree remove --workspace "$workspace"
