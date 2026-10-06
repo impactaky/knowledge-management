@@ -1,6 +1,7 @@
 """Remote provider protocol tests and real MCP adapter integration."""
 import ast
 import json
+import logging
 from pathlib import Path
 import sys
 import subprocess
@@ -54,20 +55,29 @@ def test_remote_failures_are_visible(module, mode):
             assert "timed out" in result["error"]
 
 
-@pytest.mark.parametrize("command", [[], "ssh example.invalid", [3]])
-def test_invalid_command_configuration(module, command):
-    with patch.object(module, "_provider_config", return_value={"mcp_command": command}):
-        with pytest.raises(ValueError, match="array of strings"):
-            module.FederationMemoryProvider().is_available()
-
-
-def test_conflicting_configuration(module):
-    with patch.object(module, "_provider_config", return_value={"catalog_path": "/synthetic/CATALOG.md", "mcp_command": ["fixture"]}):
+@pytest.mark.parametrize("config, reason", [
+    ({"catalog_path": "/synthetic/CATALOG.md", "mcp_command": ["fixture"]},
+     "catalog_path and mcp_command are mutually exclusive"),
+    ({"mcp_command": []}, "mcp_command must be a non-empty array of strings"),
+    ({"mcp_command": "ssh example.invalid"}, "mcp_command must be a non-empty array of strings"),
+    ({"mcp_command": [3]}, "mcp_command must be a non-empty array of strings"),
+])
+def test_configuration_errors_do_not_break_provider_registration(module, config, reason, caplog):
+    with patch.object(module, "_provider_config", return_value=config), \
+         patch.object(module, "_mcp_call") as remote_call, \
+         patch.object(module, "federation_core_search") as local_search:
         provider = module.FederationMemoryProvider()
-        with pytest.raises(ValueError, match="mutually exclusive"):
-            provider.is_available()
-        assert "mutually exclusive" in provider.system_prompt_block()
-        assert "mutually exclusive" in json.loads(provider.handle_tool_call("federation_search", {"query": "q"}))["error"]
+        assert provider.is_available() is False
+        assert [(record.levelno, record.getMessage()) for record in caplog.records] == [
+            (logging.WARNING, f"Invalid federation configuration: {reason}"),
+        ]
+        assert provider.get_tool_schemas() == []
+        assert provider.system_prompt_block() == (
+            f"<federation-catalog>\nfederation catalog unavailable: {reason}\n</federation-catalog>"
+        )
+        assert json.loads(provider.handle_tool_call("federation_search", {"query": "q"})) == {"error": reason}
+        remote_call.assert_not_called()
+        local_search.assert_not_called()
 
 
 def test_real_stdio_mcp_adapter(module, tmp_path, monkeypatch):

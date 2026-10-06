@@ -246,8 +246,12 @@ class FederationMemoryProvider(MemoryProvider):
         return command
 
     def is_available(self) -> bool:
-        if self._mcp_command() is not None:
-            return True
+        try:
+            if self._mcp_command() is not None:
+                return True
+        except ValueError as exc:
+            logger.warning("Invalid federation configuration: %s", exc)
+            return False
         path = self._catalog_path()
         return bool(path and path.is_file())
 
@@ -352,7 +356,11 @@ class FederationMemoryProvider(MemoryProvider):
         return None
 
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
-        return [SEARCH_SCHEMA, GREP_SCHEMA, READ_SCHEMA] if self._mcp_command() else [SEARCH_SCHEMA, GREP_SCHEMA]
+        try:
+            command = self._mcp_command()
+        except ValueError:
+            return []
+        return [SEARCH_SCHEMA, GREP_SCHEMA, READ_SCHEMA] if command else [SEARCH_SCHEMA, GREP_SCHEMA]
 
     def handle_tool_call(self, tool_name: str, args: Dict[str, Any], **kwargs) -> str:
         try:
