@@ -272,6 +272,37 @@ def grep(
     })
 
 
+def read(path: str | Path, *, catalog_path: str | Path | None = None) -> dict[str, str]:
+    """Read a UTF-8 file within the Catalog's search publication scope."""
+    target = Path(path)
+    if not target.is_absolute():
+        raise ValueError("path must be absolute")
+    catalog = resolve_catalog_path(catalog_path)
+    packages = parse_catalog(catalog, strict=True)
+    roots = [package.root for package in packages]
+    if not any(
+        PublicationScope(root, boundary=publication_boundary(root, roots, catalog=catalog)).allows(target)
+        for root in roots
+    ):
+        raise ValueError("path is outside publication scope or is not an existing file")
+    if target.stat().st_size > 2_000_000:
+        raise ValueError("file exceeds 2000000 bytes")
+    if not _is_probably_text(target):
+        raise ValueError("file is not a supported text file")
+    # Bound the actual read too, in case the file grows after the size check.
+    with target.open("rb") as handle:
+        data = handle.read(2_000_001)
+    if len(data) > 2_000_000:
+        raise ValueError("file exceeds 2000000 bytes")
+    if b"\x00" in data:
+        raise ValueError("file is binary")
+    try:
+        content = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError("file is not UTF-8 text") from exc
+    return {"path": str(target), "content": content}
+
+
 def _resolve_catalog_target(catalog_path: Path, raw_target: str) -> tuple[Path, Path]:
     target = raw_target.split("#", 1)[0].strip()
     parsed = urlparse(target)

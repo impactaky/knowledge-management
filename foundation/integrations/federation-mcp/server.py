@@ -12,6 +12,7 @@ sys.path.insert(0, str(CORE_PATH))
 
 from federation_core import get_catalog as read_catalog
 from federation_core import grep as federation_core_grep
+from federation_core import read as federation_core_read
 from federation_core import search as federation_core_search
 from mcp.server.fastmcp import FastMCP
 
@@ -35,6 +36,12 @@ def federation_search(query: str, deep: bool = True) -> dict[str, Any]:
 def federation_grep(query: str) -> dict[str, Any]:
     """Find literal text locations, ignoring case, in published Catalog files. Independent of semantic search and backends; returns claims and line numbers, no body snippets. Use federation_search for knowledge by meaning."""
     return federation_core_grep(query)
+
+
+@mcp.tool()
+def federation_read(path: str) -> dict[str, str]:
+    """Read an absolute UTF-8 file path within the Catalog publication scope (up to 2000000 bytes)."""
+    return federation_core_read(path)
 
 
 if __name__ == "__main__":

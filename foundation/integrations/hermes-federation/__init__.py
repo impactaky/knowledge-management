@@ -9,6 +9,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import queue
+import subprocess
+import threading
 from pathlib import Path
 import sys
 from typing import Any, Dict, List, Optional, Tuple
@@ -18,13 +21,24 @@ from agent.memory_provider import MemoryProvider
 logger = logging.getLogger(__name__)
 
 CATALOG_PATH_KEY = "catalog_path"
+MCP_COMMAND_KEY = "mcp_command"
+MCP_TIMEOUT_SECONDS = 30.0
 MEILI_URL_KEY = "meili_url"
 CORE_PATH = Path(__file__).resolve().parents[1] / "federation-core"
 if str(CORE_PATH) not in sys.path:
     sys.path.insert(0, str(CORE_PATH))
 
-from federation_core import search as federation_core_search  # noqa: E402
-from federation_core import grep as federation_core_grep  # noqa: E402
+def federation_core_search(query: str, **kwargs) -> Dict[str, Any]:
+    # Remote mode must not load the local Core's optional runtime dependencies.
+    from federation_core import search
+
+    return search(query, **kwargs)
+
+
+def federation_core_grep(query: str, **kwargs) -> Dict[str, Any]:
+    from federation_core import grep
+
+    return grep(query, **kwargs)
 
 
 SEARCH_SCHEMA: Dict[str, Any] = {
@@ -66,6 +80,97 @@ GREP_SCHEMA: Dict[str, Any] = {
         "required": ["query"],
     },
 }
+
+
+READ_SCHEMA: Dict[str, Any] = {
+    "name": "federation_read",
+    "description": "Read a published UTF-8 file from the remote federation using its absolute locator.",
+    "parameters": {
+        "type": "object",
+        "properties": {"path": {"type": "string", "description": "Absolute remote file path."}},
+        "required": ["path"],
+    },
+}
+
+
+def _mcp_call(command: List[str], name: str, arguments: Dict[str, Any]) -> Any:
+    """One stdio MCP exchange, independent of the installed MCP Python version."""
+    process = subprocess.Popen(
+        command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        text=True, encoding="utf-8",
+    )
+    completed: queue.Queue = queue.Queue()
+
+    def send(message: Dict[str, Any]) -> None:
+        process.stdin.write(json.dumps({"jsonrpc": "2.0", **message}) + "\n")
+        process.stdin.flush()
+
+    def response(request_id: int) -> Any:
+        for line in process.stdout:
+            message = json.loads(line)
+            if "method" in message:
+                if "id" in message:
+                    send({"id": message["id"], "result": {}} if message["method"] == "ping" else {
+                        "id": message["id"], "error": {"code": -32601, "message": "Method not supported"},
+                    })
+                continue
+            if message.get("id") != request_id:
+                continue
+            if "error" in message:
+                raise RuntimeError(f"MCP JSON-RPC error: {message['error']}")
+            return message["result"]
+        raise RuntimeError("MCP process closed stdout")
+
+    def exchange() -> None:
+        try:
+            send({"id": 1, "method": "initialize", "params": {
+                "protocolVersion": "2024-11-05", "capabilities": {},
+                "clientInfo": {"name": "hermes-federation", "version": "1"},
+            }})
+            response(1)
+            send({"method": "notifications/initialized"})
+            send({"id": 2, "method": "tools/call", "params": {"name": name, "arguments": arguments}})
+            completed.put(response(2))
+        except Exception as exc:
+            completed.put(exc)
+
+    # Cover blocked writes as well as reads with the same exchange deadline.
+    worker = threading.Thread(target=exchange, daemon=True)
+    worker.start()
+    try:
+        try:
+            result = completed.get(timeout=MCP_TIMEOUT_SECONDS)
+        except queue.Empty as exc:
+            raise TimeoutError("MCP request timed out") from exc
+        if isinstance(result, Exception):
+            raise result
+        if process.poll() not in (None, 0):
+            raise RuntimeError(f"MCP process exited with status {process.returncode}")
+        if result.get("isError"):
+            raise RuntimeError(f"MCP tool error: {result.get('content', [])}")
+        if "structuredContent" in result:
+            value = result["structuredContent"]
+            if name == "get_catalog" and isinstance(value, dict):
+                return value["result"]
+            return value
+        content = "\n".join(item["text"] for item in result.get("content", []) if item.get("type") == "text")
+        if name == "get_catalog":
+            return content
+        return json.loads(content)
+    finally:
+        if process.poll() is None:
+            process.terminate()
+        try:
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        worker.join(timeout=1)
+        try:
+            process.stdin.close()
+        except BrokenPipeError:
+            pass
+        process.stdout.close()
 
 
 def _json_error(message: str) -> str:
@@ -111,7 +216,7 @@ def _resolve_config_path(path_value: str) -> Path:
 
 
 class FederationMemoryProvider(MemoryProvider):
-    """Deterministic bridge from Hermes to the local knowledge federation."""
+    """Deterministic bridge from Hermes to a local or remote knowledge federation."""
 
     def __init__(self, catalog_path: str | None = None):
         self._catalog_path_override = catalog_path
@@ -127,7 +232,22 @@ class FederationMemoryProvider(MemoryProvider):
             return None
         return _resolve_config_path(path_value)
 
+    def _mcp_command(self) -> Optional[List[str]]:
+        config = _provider_config()
+        command = config.get(MCP_COMMAND_KEY)
+        if command is None:
+            return None
+        if self._catalog_path_override or config.get(CATALOG_PATH_KEY):
+            raise ValueError("catalog_path and mcp_command are mutually exclusive")
+        if not isinstance(command, list) or not command or any(
+            not isinstance(arg, str) or not arg.strip() for arg in command
+        ):
+            raise ValueError("mcp_command must be a non-empty array of strings")
+        return command
+
     def is_available(self) -> bool:
+        if self._mcp_command() is not None:
+            return True
         path = self._catalog_path()
         return bool(path and path.is_file())
 
@@ -136,7 +256,12 @@ class FederationMemoryProvider(MemoryProvider):
             {
                 "key": CATALOG_PATH_KEY,
                 "description": "Absolute path to the federation CATALOG.md",
-                "required": True,
+                "required": False,
+            },
+            {
+                "key": MCP_COMMAND_KEY,
+                "description": "stdio MCP command as an argv array; mutually exclusive with catalog_path",
+                "required": False,
             },
             {
                 "key": MEILI_URL_KEY,
@@ -187,6 +312,19 @@ class FederationMemoryProvider(MemoryProvider):
         self._session_id = session_id
 
     def system_prompt_block(self) -> str:
+        try:
+            command = self._mcp_command()
+            if command is not None:
+                catalog = _mcp_call(command, "get_catalog", {})
+                if not isinstance(catalog, str):
+                    raise ValueError("get_catalog must return text")
+                return (
+                    "<federation-catalog>\nSource: remote MCP\n\n"
+                    f"{catalog.rstrip()}\n</federation-catalog>"
+                )
+        except Exception as exc:
+            reason = " ".join(str(exc).split())[:300]
+            return f"<federation-catalog>\nfederation catalog unavailable: {reason}\n</federation-catalog>"
         catalog_path = self._catalog_path()
         if catalog_path is None:
             return ""
@@ -214,9 +352,17 @@ class FederationMemoryProvider(MemoryProvider):
         return None
 
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
-        return [SEARCH_SCHEMA, GREP_SCHEMA]
+        return [SEARCH_SCHEMA, GREP_SCHEMA, READ_SCHEMA] if self._mcp_command() else [SEARCH_SCHEMA, GREP_SCHEMA]
 
     def handle_tool_call(self, tool_name: str, args: Dict[str, Any], **kwargs) -> str:
+        try:
+            command = self._mcp_command()
+            if command is not None:
+                if tool_name not in {"federation_search", "federation_grep", "federation_read"}:
+                    return _json_error(f"Unknown federation tool: {tool_name}")
+                return json.dumps(_mcp_call(command, tool_name, args), ensure_ascii=False)
+        except Exception as exc:
+            return _json_error(str(exc))
         if tool_name not in {"federation_search", "federation_grep"}:
             return _json_error(f"Unknown federation tool: {tool_name}")
         query = args.get("query", "")

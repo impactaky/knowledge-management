@@ -215,8 +215,12 @@ Do not send UI logs to the MCP process's stdout.
 }
 ```
 
-Tools are `get_catalog()`, `federation_search(query, deep=true)` and
-`federation_grep(query)`. Deep search without a backend reports `unavailable` while
+Tools are `get_catalog()`, `federation_search(query, deep=true)`,
+`federation_grep(query)` and `federation_read(path)`. Read accepts an absolute
+server-side path and returns UTF-8 `path`/`content` within the same published
+Package scope as grep, up to 2,000,000 bytes. Excluded work, symlink escapes,
+non-files and binary content produce tool errors. Deep search without a backend
+reports `unavailable` while
 retaining live entries; shallow search reports `not_requested`. Backend failure
 never silently invokes grep. A reachable backend with a failing embedder reports
 `degraded` and tries lexical article search. These are different from successful
@@ -313,8 +317,29 @@ outside this repository. Hermes may consume either the generic MCP
 adapter or the [native memory provider plugin](../foundation/integrations/hermes-federation/README.md).
 Configure the provider under `memory.federation` in `~/.hermes/config.yaml`:
 
-- `catalog_path`: Path to `CATALOG.md` (required; supports environment variables and `~`).
-- `meili_url`: Optional Meilisearch URL for semantic search (e.g. `http://127.0.0.1:7700`); falls back to `MEILI_URL` in the environment.
+- `catalog_path`: Local path to `CATALOG.md` (supports environment variables and `~`); mutually exclusive with `mcp_command`.
+- `mcp_command`: Optional stdio MCP command as an argv array for a host without local knowledge files.
+- `meili_url`: Optional local-mode Meilisearch URL for semantic search (e.g. `http://127.0.0.1:7700`); falls back to `MEILI_URL` in the environment. Remote mode uses the server configuration.
+
+For remote prompt injection and tools, configure an argv such as:
+
+```yaml
+memory:
+  provider: federation
+  federation:
+    mcp_command: [ssh, knowledge.example.invalid, env, FEDERATION_CATALOG=/srv/example-store/CATALOG.md, /srv/knowledge-management/foundation/tools/knowledge-ui/.venv/bin/python, /srv/knowledge-management/foundation/integrations/federation-mcp/server.py]
+```
+
+Choose either local `catalog_path` or remote `mcp_command`; both together are an
+error, and neither means unconfigured. Remote mode fetches `get_catalog` on every
+system prompt build (session start and compression in Hermes), injects
+`<federation-catalog>` with a remote source label, and forwards search, grep and
+read. Local mode retains search and grep. Each remote call starts and closes a
+stdio subprocess with a 30-second exchange timeout; the provider client uses only
+the standard library, independently of the installed MCP package version.
+Connection, timeout and MCP errors yield an unavailable Catalog block during
+prompt construction and `{"error": ...}` for tools. Automatic recall/write hooks
+remain no-op.
 
 Register the shared workflows through Hermes' normal skills directory by placing
 symlinks under `~/.hermes/skills/` to the workflow directories in this checkout's

@@ -13,6 +13,7 @@ from .core import (
     SearchOptions,
     get_catalog,
     grep,
+    read,
     parse_catalog,
     search,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "SearchOptions",
     "get_catalog",
     "grep",
+    "read",
     "parse_catalog",
     "search",
 ]

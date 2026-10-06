@@ -487,7 +487,7 @@ class FederationCoreTests(unittest.TestCase):
         with patch.dict(sys.modules, {"mcp.server.fastmcp": fast}):
             adapter = runpy.run_path(str(FOUNDATION / "integrations/federation-mcp/server.py"))
         tools = registered["instance"].tools
-        self.assertEqual(set(tools), {"get_catalog", "federation_search", "federation_grep"})
+        self.assertEqual(set(tools), {"get_catalog", "federation_search", "federation_grep", "federation_read"})
         for name, function in tools.items():
             self.assertIs(adapter[name], function)
             self.assertTrue(function.__doc__)
