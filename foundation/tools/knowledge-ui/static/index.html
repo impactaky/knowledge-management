@@ -422,12 +422,40 @@
     min-height: 0;
     overflow: hidden;
     padding: 16px;
+    display: flex;
+    gap: 12px;
   }
+  #comments-panel { width: 300px; flex-shrink: 0; overflow: auto; color: var(--text); }
+  #comments-panel[hidden] { display: none; }
+  #comments-panel article { border-bottom: 1px solid var(--line); padding: 12px 0; }
+  #comments-panel blockquote, #comments-panel p { white-space: pre-wrap; overflow-wrap: anywhere; }
+  #comments-panel blockquote { margin: 8px 0; padding-left: 8px; border-left: 2px solid var(--line); }
+  #comments-panel button {
+    margin: 4px;
+    padding: 4px 8px;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: var(--control);
+    cursor: pointer;
+  }
+  #comments-panel button:hover { background: var(--accent-soft); }
+  #comments-panel small { display: block; color: var(--muted); }
+  #comment-body {
+    width: 100%;
+    box-sizing: border-box;
+    font: inherit;
+    color: var(--text);
+    background: var(--control);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+  }
+  #comment-error { color: #d45b5b; }
 
   #article-frame {
     display: block;
     width: 100%;
     height: 100%;
+    min-width: 0;
     min-height: 0;
     border: 1px solid var(--line);
     border-radius: 8px;
@@ -462,6 +490,11 @@
     .preview-shell {
       padding: 10px;
     }
+  }
+  @media (max-width: 1100px) {
+    .preview-shell { flex-direction: column; overflow: auto; }
+    #article-frame { flex: 1; min-height: 200px; }
+    #comments-panel { width: auto; max-height: 35vh; flex-shrink: 0; }
   }
 </style>
 </head>
@@ -518,6 +551,17 @@
     </header>
     <div class="preview-shell">
       <iframe id="article-frame" src="about:blank" title="Article preview"></iframe>
+      <aside id="comments-panel" aria-label="記事のコメント" hidden>
+        <h3>コメント</h3>
+        <button id="comment-selection" type="button" hidden>選択箇所にコメント</button>
+        <form id="comment-form" hidden>
+          <label for="comment-body">コメント本文</label>
+          <textarea id="comment-body" rows="4" required maxlength="50000"></textarea>
+          <button type="submit">保存</button><button id="comment-cancel" type="button">キャンセル</button>
+        </form>
+        <p id="comment-error" role="alert"></p>
+        <div id="comment-list" aria-live="polite"></div>
+      </aside>
     </div>
   </section>
 </main>
@@ -640,7 +684,7 @@ async function refreshIndex() {
   }
 }
 
-loadNavigation();
+document.addEventListener("DOMContentLoaded", loadNavigation);
 
 async function loadNavigation() {
   await Promise.all([loadTree(), loadDrafts()]);
@@ -1041,5 +1085,6 @@ function jsEsc(s) {
     .replace(/"/g, "&quot;");
 }
 </script>
+<script src="/static/comments.js"></script>
 </body>
 </html>

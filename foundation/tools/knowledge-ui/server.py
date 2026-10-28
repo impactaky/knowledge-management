@@ -25,6 +25,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Literal
 from urllib.parse import quote
 
 import meilisearch
@@ -32,6 +33,7 @@ import yaml
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
 from mdit_py_plugins.anchors import anchors_plugin
@@ -62,6 +64,8 @@ from federation_core.publication import PublicationScope  # noqa: E402
 # ---------------------------------------------------------------------------
 
 from federation_core.core import resolve_catalog_path
+from federation_core.comments import comment_path, comments as read_comments
+from comments import mutate as mutate_comments, parse as parse_comments
 
 CATALOG_PATH = resolve_catalog_path()
 DRAFTS_ROOT = (CATALOG_PATH.parent / "drafts").resolve()
@@ -854,6 +858,62 @@ async def _run_indexer() -> None:
 # ---------------------------------------------------------------------------
 # API エンドポイント
 # ---------------------------------------------------------------------------
+
+class NewComment(BaseModel):
+    file: str
+    heading: str = Field(default="", max_length=2000)
+    anchor: str = Field(default="", max_length=2000)
+    quote: str = Field(min_length=1, max_length=50000)
+    body: str = Field(min_length=1, max_length=50000)
+
+
+class CommentStatus(BaseModel):
+    file: str
+    status: Literal["open", "resolved"]
+
+
+def resolve_comment_path(file: str) -> Path:
+    try:
+        if not is_safe_path(file):
+            raise ValueError("Article is outside package roots")
+        return comment_path(file, catalog_path=CATALOG_PATH)
+    except (ValueError, OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/comments")
+def list_comments(file: str = Query(...)):
+    resolve_comment_path(file)
+    result = read_comments(file, catalog_path=CATALOG_PATH)
+    return {"comments": parse_comments(result["content"])}
+
+
+def change_comments(file: str, **kwargs):
+    target = resolve_comment_path(file)
+    try:
+        return {"comments": mutate_comments(target, **kwargs)}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/comments")
+def add_comment(comment: NewComment):
+    if not comment.body.strip() or not comment.quote.strip():
+        raise HTTPException(status_code=400, detail="Quote and comment must not be blank")
+    return change_comments(comment.file, new=comment.model_dump(exclude={"file"}))
+
+
+@app.patch("/api/comments/{comment_id}")
+def set_comment_status(comment_id: str, update: CommentStatus):
+    return change_comments(update.file, comment_id=comment_id, status=update.status)
+
+
+@app.delete("/api/comments/{comment_id}")
+def delete_comment(comment_id: str, file: str = Query(...)):
+    return change_comments(file, comment_id=comment_id)
+
 
 @app.get("/api/tree")
 async def tree():

@@ -10,6 +10,7 @@ from typing import Any
 CORE_PATH = Path(__file__).resolve().parents[1] / "federation-core"
 sys.path.insert(0, str(CORE_PATH))
 
+from federation_core import comments as federation_core_comments
 from federation_core import get_catalog as read_catalog
 from federation_core import grep as federation_core_grep
 from federation_core import read as federation_core_read
@@ -42,6 +43,12 @@ def federation_grep(query: str) -> dict[str, Any]:
 def federation_read(path: str) -> dict[str, str]:
     """Read an absolute UTF-8 file path within the Catalog publication scope (up to 2000000 bytes)."""
     return federation_core_read(path)
+
+
+@mcp.tool()
+def federation_comments(path: str) -> dict[str, Any]:
+    """Read raw comment Markdown for an absolute .md article in Catalog Packages or drafts. Missing comments return exists=false; unsafe paths raise tool errors."""
+    return federation_core_comments(path)
 
 
 if __name__ == "__main__":

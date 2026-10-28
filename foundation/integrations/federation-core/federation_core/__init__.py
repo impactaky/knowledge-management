@@ -18,6 +18,8 @@ from .core import (
     search,
 )
 
+from .comments import comments
+
 __all__ = [
     "ARTICLE_RESULT_LIMIT",
     "DEFAULT_CATALOG_PATH",
@@ -30,6 +32,7 @@ __all__ = [
     "SEMANTIC_SCORE_THRESHOLD",
     "SearchOptions",
     "get_catalog",
+    "comments",
     "grep",
     "read",
     "parse_catalog",
