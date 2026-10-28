@@ -12,6 +12,12 @@
   } catch (_) {
     document.documentElement.dataset.displayTheme = "light";
   }
+  // Collapsed sidebars are applied before first paint, like the theme.
+  for (const name of ["hideNav", "hideComments"]) {
+    try {
+      if (localStorage.getItem(`knowledgeBrowser:${name}`) === "1") document.documentElement.dataset[name] = "";
+    } catch (_) {}
+  }
 })();
 </script>
 <style>
@@ -491,6 +497,11 @@
       padding: 10px;
     }
   }
+  html[data-hide-nav] .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  html[data-hide-nav] .sidebar { display: none; }
+  html[data-hide-comments] #comments-panel { display: none; }
+  html[data-hide-nav] #toggle-nav,
+  html[data-hide-comments] #toggle-comments { color: var(--muted); }
   @media (max-width: 1100px) {
     .preview-shell { flex-direction: column; overflow: auto; }
     #article-frame { flex: 1; min-height: 200px; }
@@ -543,6 +554,8 @@
         <div id="preview-path">Select an article from Tree, Results, or Drafts.</div>
       </div>
       <div class="preview-actions">
+        <button class="icon-button" id="toggle-nav" title="Toggle navigation sidebar" aria-label="Toggle navigation sidebar">◧</button>
+        <button class="icon-button" id="toggle-comments" title="Toggle comments panel" aria-label="Toggle comments panel">◨</button>
         <button class="icon-button" id="open-live" title="Open executable article live" aria-label="Open executable article live">▶</button>
         <button class="icon-button" id="open-new" title="Open current document in a new tab" aria-label="Open current document in a new tab">↗</button>
         <button class="icon-button" id="theme-toggle" title="Switch to dark theme" aria-label="Switch to dark theme">◐</button>
@@ -638,6 +651,21 @@ openNewButton.addEventListener("click", () => {
   if (!state.selectedFile) return;
   window.open(articleUrl(state.selectedFile, state.selectedAnchor, false), "_blank", "noopener");
 });
+
+for (const [id, name] of [["toggle-nav", "hideNav"], ["toggle-comments", "hideComments"]]) {
+  const button = document.getElementById(id);
+  const sync = () => button.setAttribute("aria-pressed", String(!(name in document.documentElement.dataset)));
+  sync();
+  button.addEventListener("click", () => {
+    const hidden = name in document.documentElement.dataset;
+    if (hidden) delete document.documentElement.dataset[name];
+    else document.documentElement.dataset[name] = "";
+    try {
+      localStorage.setItem(`knowledgeBrowser:${name}`, hidden ? "0" : "1");
+    } catch (_) {}
+    sync();
+  });
+}
 
 themeToggleButton.addEventListener("click", () => {
   const nextTheme = currentDisplayTheme() === "dark" ? "light" : "dark";
