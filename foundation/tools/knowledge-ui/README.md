@@ -12,6 +12,11 @@ snippets are a separate UI projection.
 
 ## Article comments
 
+Open `/?file=<absolute article path>` (optionally with `#anchor`) to start the
+browser on that article with its comment panel; the address bar follows the
+selected article, so it can be copied as a link. `/article?file=...` is the bare
+rendered page and has no comment panel.
+
 Select text in a Markdown preview, choose **選択箇所にコメント**, enter a comment
 and save. The adjacent list loads from disk on each article load, with quotation,
 body, creation time and open/resolved status. Its heading button scrolls to the

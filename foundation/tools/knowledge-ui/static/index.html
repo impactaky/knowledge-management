@@ -687,8 +687,18 @@ async function refreshIndex() {
 document.addEventListener("DOMContentLoaded", loadNavigation);
 
 async function loadNavigation() {
+  // `/?file=<absolute path>#anchor` opens that article without waiting for the tree.
+  const linkedFile = new URLSearchParams(window.location.search).get("file");
+  if (linkedFile) openDoc(linkedFile, window.location.hash, linkedFile);
   await Promise.all([loadTree(), loadDrafts()]);
-  openInitialDocument();
+  if (!linkedFile) {
+    openInitialDocument();
+  } else if (state.selectedFile === linkedFile) {
+    state.selectedLabel = findLabelForFile(linkedFile) || linkedFile;
+    if (isDraftFile(linkedFile)) setTab("drafts");
+    updatePreviewHeader();
+    updateActiveRows();
+  }
 }
 
 async function loadTree() {
@@ -967,6 +977,7 @@ function openDoc(file, anchor = "", label = "") {
   state.selectedAnchor = anchor || "";
   state.selectedLabel = label || findLabelForFile(file) || file;
   localStorage.setItem("knowledgeBrowser:lastFile", file);
+  history.replaceState(null, "", `/?file=${encodeURIComponent(file)}${state.selectedAnchor}`);
 
   articleFrame.onload = () => {
     sendDisplayThemeToArticle();
