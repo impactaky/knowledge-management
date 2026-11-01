@@ -70,6 +70,8 @@ Use [templates/store/](../templates/store/) as described in [Create your store](
 | `KNOWLEDGE_ENABLE_LIVE_MARIMO` | `1` enables live notebook execution; default off (`0`); requires optional `notebook` extra |
 | `KNOWLEDGE_MARIMO_HOST` | Host for live marimo instances; defaults to `UI_HOST` or `127.0.0.1` |
 | `UI_HOST`, `UI_PORT` | Browser bind address/port, default `127.0.0.1:7776` |
+| `KNOWLEDGE_REVIEW_NOTIFIER` | Optional absolute executable path implementing review `whoami`, `status`, `deliver`; unset uses paste fallback |
+| `KNOWLEDGE_UI_BASIC_AUTH_FILE` | File with `user:pbkdf2-sha256$iterations$saltHex$digestHex`; required and validated before any non-loopback UI startup |
 | `KNOWLEDGE_UI_BASE_URL` | Base URL used by the article URL helper |
 | `UV_CACHE_DIR`, `DENO_DIR` | Set to checkout `.cache/uv` and `.cache/deno` for local caches |
 | `KNOWLEDGE_DATA_DIR` | Runtime logs and live notebook state; default `${XDG_STATE_HOME:-$HOME/.local/state}/knowledge-management` |
@@ -309,8 +311,13 @@ Or declare `KNOWLEDGE_ENABLE_LIVE_MARIMO=1` within your `--env-file`.
 `KNOWLEDGE_MARIMO_IDLE_SECONDS` default to loopback (or `UI_HOST`), 7780–7879 and
 3600. Notebook sandbox dependencies declared in PEP 723 are resolved by uv and may
 require network access. Live execution is disabled by default. Serve only trusted
-stores on loopback: this browser has no authentication and intentionally allows
-draft previews and explicit indexing. Frozen HTML is trusted active content.
+stores: this browser intentionally allows draft previews and explicit indexing. Loopback binding permits unauthenticated use. Non-loopback
+binding requires `KNOWLEDGE_UI_BASIC_AUTH_FILE`; absent, unreadable or malformed
+credentials fail startup. Create the file with `python auth.py <file> <user>`
+from `foundation/tools/knowledge-ui/` (interactive password, mode 0600). All UI
+requests, including static assets and APIs, then require Basic authentication.
+Use a trusted encrypted transport for remote access. Frozen HTML is trusted
+active content.
 
 Hermes is optional. Deployment-specific orchestration and workflows remain
 outside this repository. Hermes may consume either the generic MCP

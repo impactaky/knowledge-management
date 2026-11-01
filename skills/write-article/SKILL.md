@@ -47,13 +47,34 @@ description: 整理済みの理解と出自から、自己完結で再読でき�
 uv run --project /path/to/knowledge-ui python /path/to/knowledge-ui/article_url.py /absolute/path/to/article.md
 ```
 
+`article_url.py` は `/?file=` のコメント欄付きURLを出す。設定済みnotifierが呼び出し元を特定できる場合、その会話をレビューの持ち主として記録する。notifierが未設定・特定不能でもURLは利用できる。
+
 tooling checkoutと知識ストアは別の場所でよい。`KNOWLEDGE_UI_BASE_URL`で閲覧UIのURLを指定する。
 
 knowledge-uiを利用できる場合は、出力されたURLをMarkdownリンクとして提示する。利用できない場合は、ユーザが開けるファイルリンク・添付・会話内の全文提示を使う。これは新規draft、既存記事、ストック後の記事のすべてに適用する。ユーザが読めないパスだけを渡してレビュー済みにはしない。
 
+### レビューを受け取る
+
+`[knowledge-review]` の知らせを受けたら、選択済みCatalogの shared-rules から解決した `tools/knowledge-ui/review.py` を使う。知らせにある記事の絶対pathとラウンド番号で読み、判定に従う。MCPは読み取り専用のまま使う。
+
+```bash
+uv run --project /path/to/knowledge-ui python /path/to/knowledge-ui/review.py show /absolute/path/to/article.md --round 1
+uv run --project /path/to/knowledge-ui python /path/to/knowledge-ui/review.py skeleton /absolute/path/to/article.md 1 > reply.json
+# 本文を直し、reply.json に各コメントへの返事を書く
+uv run --project /path/to/knowledge-ui python /path/to/knowledge-ui/review.py reply /absolute/path/to/article.md 1 reply.json
+```
+
+送ったコメントと1対1で、全件に1行の `reading`（どう読んだか）と `done|partial|skipped` を書く。partial/skipped は `reason` を必須とする。迷ったら最善の読みで直しつつ `needsConfirm: true` と `question` を残す。黙って無視せず、文のないコメントも正常な指摘として扱う。全体への返事は任意の `general`、人に見てほしい一言は `summary` に書く。done の reading は記録に残り、UIでは問い・見送った理由・summaryを確認できる。問いへの人の答えは元コメントへの返信として次のラウンドに届く。
+
+短い答え（「それでいい」「ok」）はその案への決定として扱い、未決の印を外す。「〜ってなに」は説明を足さず本文を言い換え、同じ語を全部直す。全体への「わかりづらい」はその記事だけの造語を洗い出す。
+
+承認の知らせでは何も直さず、「Stock の判定を会話で確かめる」。承認ラウンドには返事を書かない。新しいレビューを依頼する場合はURL helperまたは `claim <path>` で改めて持ち主を記録する。
+
+差戻しは `review.py revert <path> <round>` を実行する。指定された `revertTo` の `base.md` を機械的に記事へ写し、全件を `skipped`、理由 `revert` で返す。独自の修正を混ぜない。
+
 ## 5. ストックまたは却下する
 
-本文・配置先・新規/差し替え/改稿の別・主張行・必要なら凍結ビューをまとめて提示し、ユーザの明示判定を待つ。提示直後の `stock` は最終承認として再確認せず、テーマへの移動・記事内`claims`の整備・記事コミットまで行う。却下ならドラフトを削除し、保留なら残す。
+本文・配置先・新規/差し替え/改稿の別・主張行・必要なら凍結ビューをまとめて提示し、ユーザの明示判定を待つ。提示直後の `stock` は最終承認として再確認せず、テーマへの移動・記事内`claims`の整備・記事コミットまで行う。却下ならドラフトを削除し、保留なら残す。Stockで記事を `drafts/` から `articles/<theme>/` へ移すときは、同じslugの `.reviews/<slug>/` も移動先ディレクトリの `.reviews/<slug>/` へ移す。レビュー記録はGitで追跡しない。
 
 提示済みドラフトが無い状態でユーザが `stock` と言った場合は、ドラフト作成依頼として扱って上記一式を提示し、改めて `stock` を待つ。未判定ドラフトが複数ある、または会話が切れて対象が曖昧な場合だけ対象を確認する。
 

@@ -46,6 +46,14 @@ _Avoid_: Agentによる無断の補強や訂正、既知知識の網羅的な記
 Article本文、分類、Claim Line、必要な派生viewを本人がreviewし、「読んで理解した」かつ有用と明示判定した後に恒久化するgate。Implementation Authorizationとは独立し、自動では通らない。
 _Avoid_: 自動Stock、後からの剪定前提、Implementation Authorization
 
+**レビューラウンド (Review Round)**:
+Articleの一つの版について、本人が判定とコメントを送り、Agentが各コメントへの読みと対応を返す一巡。承認はreview完了を表し、Stockの明示判定とは独立する。
+_Avoid_: Stock、コメント一件、会話全体
+
+**レビューの持ち主 (Review Owner)**:
+Articleのreviewを依頼し、本人の判定とコメントを受け取るAgentの会話。reviewを提示した会話から、対応を返した会話へ引き継がれる。
+_Avoid_: 最後の編集者、校正担当、端末paneそのもの
+
 **Stocked Article**:
 Stock gateを通過してテーマへ配置され、自身のClaim LineとともにKnowledge Federationへ公開するArticle。Claim Lineの欠落は著述不備であり、公開を取り消す条件にはしない。
 _Avoid_: Draft、採用された決定、Knowledge Package
