@@ -9,6 +9,7 @@ let commentsFile = "";
 let selectedPassage = null;
 let commentsRequest = 0;
 let reviewState = null;
+let reviewRequest = 0;
 const reviewElement = (id) => document.getElementById(`review-${id}`);
 
 function saveComposition() {
@@ -35,75 +36,122 @@ async function commentsApi(url, options) {
   return result;
 }
 
+let displayedSha = "";
+let currentComments = [];
+
+function node(tag, text, className) {
+  const element = document.createElement(tag);
+  if (text !== undefined) element.textContent = text;
+  if (className) element.className = className;
+  return element;
+}
+function button(text, action, className) {
+  const element = node('button', text, className);
+  element.type = 'button';
+  element.onclick = action;
+  return element;
+}
+function timestamp(value) {
+  const time = node('time', new Date(value).toLocaleString([], {month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'}));
+  time.dateTime = value;
+  time.title = new Date(value).toLocaleString();
+  return time;
+}
+
 function showComments(items) {
-  commentList.replaceChildren();
-  if (!items.length) commentList.textContent = "コメントはありません。記事の文章を選択すると追加できます。";
-  for (const item of items) {
-    const card = document.createElement("article");
-    const heading = document.createElement("button");
-    heading.type = "button";
-    heading.textContent = `${item.status} · ${item.heading || "記事冒頭"}`;
-    heading.onclick = () => {
-      const doc = articleFrame.contentDocument;
-      const target = item.anchor ? doc.getElementById(item.anchor.replace(/^#/, "")) : doc.body;
-      if (target) target.scrollIntoView({behavior: "smooth"});
-    };
-    const quote = document.createElement("blockquote");
-    quote.textContent = item.quote;
-    const body = document.createElement("p");
-    body.textContent = item.body;
-    const created = document.createElement("small");
-    created.textContent = item.created;
-    const status = document.createElement("button");
-    status.type = "button";
-    status.textContent = item.status === "open" ? "解決" : "再開";
-    status.onclick = () => changeComment(item.id, item.status === "open" ? "resolved" : "open");
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.textContent = "削除";
-    remove.onclick = () => {
-      if (window.confirm("このコメントを削除しますか？")) changeComment(item.id);
-    };
-    card.append(heading, quote, body, created, status, remove);
+  currentComments = items;
+  const roots = items.filter(item => !item.reply_to || !items.some(parent => parent.id === item.reply_to));
+  const keep = new Set(roots.map(item => item.id));
+  for (const card of [...commentList.children]) if (!keep.has(card.dataset.id)) card.remove();
+  if (!roots.length) {
+    if (!commentList.firstChild) commentList.append(node('p', 'コメントはありません。記事の文章を選択すると追加できます。', 'empty'));
+    updateReviewControls();
+    return;
+  }
+  for (const child of [...commentList.children]) if (!child.dataset.id) child.remove();
+  for (const item of roots) {
+    const replies = items.filter(answer => answer.reply_to === item.id);
     const reply = reviewState?.reply?.orders?.find(order => order.comment_id === item.id);
-    if (reply?.reason && ['partial', 'skipped'].includes(reply.status)) {
-      const reason = document.createElement('p');
-      reason.textContent = `${reply.status}: ${reply.reason}`;
-      card.append(reason);
+    const round = reviewState?.round || 0;
+    const submitted = new Set(reviewState?.rounds.flatMap(r => r.comment_ids) || []);
+    const signature = JSON.stringify([item, replies, reply, round, replies.map(r => submitted.has(r.id))]);
+    let card = [...commentList.children].find(element => element.dataset.id === item.id);
+    if (card?.dataset.signature === signature) continue;
+    // Only changed threads are replaced. Preserve composition, disclosure and focus.
+    const oldInput = card?.querySelector('textarea');
+    const draft = oldInput?.value;
+    const oldDetails = card?.querySelector('details');
+    const expanded = oldDetails?.open;
+    const focused = card?.contains(document.activeElement) ? document.activeElement.dataset.control : null;
+    const selection = oldInput && document.activeElement === oldInput ? [oldInput.selectionStart, oldInput.selectionEnd] : null;
+    const replacement = node('article');
+    replacement.dataset.id = item.id;
+    replacement.dataset.signature = signature;
+    const heading = button(`${item.heading || '記事冒頭'} · 本文で見る`, () => {
+      const doc = articleFrame.contentDocument;
+      const target = item.anchor ? doc.getElementById(item.anchor.replace(/^#/, '')) : doc.body;
+      if (target) target.scrollIntoView({behavior: 'smooth'});
+    });
+    heading.dataset.control = 'heading';
+    replacement.append(heading, node('blockquote', item.quote), node('p', `あなた：${item.body}`), timestamp(item.created));
+    if (reply) {
+      const labels = {done: '対応済み', partial: '一部対応', skipped: '未対応'};
+      replacement.append(node('p', `agent：${labels[reply.status]}${reply.reason ? ' — ' + reply.reason : ''}`, 'agent-response'));
     }
     if (reply?.needsConfirm) {
-      const details = document.createElement('details');
-      const marker = document.createElement('summary');
-      marker.textContent = '? 確認したいこと';
-      const question = document.createElement('p');
-      question.textContent = reply.question;
-      const answer = document.createElement('textarea');
-      answer.setAttribute('aria-label', '問いへの答え');
-      const key = `knowledge-answer:${commentsFile}:${item.id}`;
-      try { answer.value = localStorage.getItem(key) || ''; } catch (_) {}
+      const details = node('details');
+      const answers = replies.filter(answer => answer.created > reviewState.rounds.at(-1).at);
+      details.open = expanded ?? !answers.length;
+      const marker = node('summary', answers.length ? '確認したいこと · 回答保存済み' : '要回答 · 確認したいこと');
+      marker.dataset.control = 'question';
+      details.append(marker, node('p', reply.question));
+      const answer = node('textarea');
+      answer.rows = 3;
+      answer.dataset.control = 'answer';
+      answer.setAttribute('aria-label', `${item.heading || '記事冒頭'}：${reply.question}への答え`);
+      const key = `knowledge-answer:${commentsFile}:${round}:${item.id}`;
+      try { answer.value = draft ?? localStorage.getItem(key) ?? ''; } catch (_) { answer.value = draft ?? ''; }
       answer.oninput = () => { try { localStorage.setItem(key, answer.value); } catch (_) {} };
-      const send = document.createElement('button');
-      send.textContent = '答えを保存';
-      send.onclick = async () => {
+      const save = button('答えを保存', async () => {
         const file = commentsFile;
+        save.disabled = true;
         try {
           await commentsApi('/api/comments', {method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({file, quote: item.quote || '(記事全体)', heading: item.heading, anchor: item.anchor,
               body: answer.value, reply_to: item.id})});
           try { localStorage.removeItem(key); } catch (_) {}
-          if (file === commentsFile) await refreshComments();
+          answer.value = '';
+          if (file === commentsFile) { await refreshReview(); }
         } catch (error) { commentError.textContent = error.message; }
-      };
-      details.append(marker, question, answer, send);
-      card.append(details);
+        finally { save.disabled = false; }
+      });
+      save.dataset.control = 'save';
+      details.append(answer, save);
+      replacement.append(details);
     }
-    if (item.reply_to) {
-      const relation = document.createElement('small');
-      relation.textContent = `返信先: ${item.reply_to}`;
-      card.append(relation);
+    for (const answer of replies) {
+      const saved = node('div', undefined, 'saved-answer');
+      saved.append(node('p', `あなたの答え：${answer.body}`), timestamp(answer.created),
+        node('small', submitted.has(answer.id) ? '送信済み' : '保存済み・次の送信で agent に届きます'));
+      replacement.append(saved);
     }
-    commentList.append(card);
+    const actions = node('div', undefined, 'thread-actions');
+    const status = button(item.status === 'open' ? '解決にする' : '再開する', () => changeComment(item.id, item.status === 'open' ? 'resolved' : 'open'));
+    status.dataset.control = 'status';
+    const remove = button('削除', () => {
+      if (window.confirm('このコメントを削除しますか？')) changeComment(item.id);
+    }, 'danger');
+    remove.dataset.control = 'remove';
+    actions.append(node('small', `コメント：${item.status === 'open' ? '未解決' : '解決済み'}`), status, remove);
+    replacement.append(actions);
+    if (card) card.replaceWith(replacement); else commentList.append(replacement);
+    if (focused) {
+      const target = replacement.querySelector(`[data-control="${focused}"]`);
+      target?.focus({preventScroll: true});
+      if (selection && target?.tagName === 'TEXTAREA') target.setSelectionRange(...selection);
+    }
   }
+  updateReviewControls();
 }
 
 async function refreshComments() {
@@ -165,6 +213,14 @@ articleFrame.addEventListener("load", () => {
   saveComposition();
   ++commentsRequest;
   reviewState = null;
+  ++reviewRequest;
+  displayedSha = "";
+  currentComments = [];
+  reviewElement("verdict").value = "revise";
+  reviewElement("revert").value = "";
+  reviewElement("diff-toggle").setAttribute("aria-pressed", "false");
+  reviewElement("body-toggle").setAttribute("aria-pressed", "true");
+  reviewElement("diff-caption").hidden = true;
   reviewElement('diff').hidden = true;
   articleFrame.hidden = false;
   commentsFile = "";
@@ -179,7 +235,9 @@ articleFrame.addEventListener("load", () => {
   const file = url.searchParams.get("file") || "";
   if (url.pathname !== "/article" || !file.toLowerCase().endsWith(".md")) return;
   commentsFile = file;
+  displayedSha = articleFrame.contentDocument.querySelector('meta[name="knowledge-article-sha256"]')?.content || "";
   commentsPanel.hidden = false;
+  updateReviewControls();
   restoreComposition();
   refreshComments();
   refreshReview();
@@ -201,66 +259,107 @@ articleFrame.addEventListener("load", () => {
   });
 });
 
+function updateReviewControls() {
+  const data = reviewState;
+  const stale = !displayedSha || (data && data.article_sha256 !== displayedSha);
+  reviewElement('updated').hidden = !data || !stale;
+  const verdict = reviewElement('verdict').value;
+  reviewElement('revert-label').hidden = verdict !== 'revert';
+  reviewElement('stock').hidden = verdict !== 'approve';
+  const labels = {revise: '修正依頼を送信', approve: 'レビュー承認を送信', revert: '過去の版に戻す依頼を送信'};
+  const submit = reviewElement('submit');
+  submit.textContent = labels[verdict];
+  submit.disabled = !data?.can_submit || stale || (verdict === 'revert' && !reviewElement('revert').value);
+  submit.hidden = !!data && !data.can_submit;
+  reviewElement('waiting').textContent = !data ? '状態を確認しています' : data.can_submit ? '' :
+    data.phase === 'complete' ? 'レビュー完了' : data.phase === 'blocked' ? 'レビューは保存済みです。通知先を確認してください。' : `ラウンド ${data.round} を送信済み。agent の返事を待っています。`;
+  const open = currentComments.filter(c => c.status === 'open');
+  reviewElement('count').textContent = `指摘 ${open.filter(c => !c.reply_to).length} 件・回答 ${open.filter(c => c.reply_to).length} 件を送信`;
+}
+
 async function refreshReview() {
+  const request = ++reviewRequest;
   const file = commentsFile;
   if (!file) return;
   try {
     const data = await commentsApi(`/api/reviews?file=${encodeURIComponent(file)}`);
-    if (file !== commentsFile) return;
+    if (file !== commentsFile || request !== reviewRequest) return;
     reviewState = data;
-    reviewElement('owner').textContent = data.owner ? `送信先: ${data.owner.title || '(無題)'} (${data.owner.status})` : '宛先なし';
-    reviewElement('submit').disabled = !data.can_submit;
-    const labels = {delivered: '届けた', waiting: '待っています', blocked: '承認待ちで止まっています',
-      absent: '不在', unconfigured: '通知は未設定です', failed: '通知に失敗しました', timeout: '通知が時間切れになりました'};
-    reviewElement('delivery').textContent = labels[data.delivery.status] || '';
+    const phases = {reviewing: 'あなたの確認待ち', waiting_reply: 'agent の返事待ち', complete: 'レビュー完了', blocked: '進行が止まっています'};
+    reviewElement('phase').textContent = phases[data.phase];
+    reviewElement('round').textContent = `ラウンド ${data.round}`;
+    reviewElement('questions').textContent = `要回答 ${data.open_questions} 件`;
+    reviewElement('owner').textContent = data.owner ? `宛先：${data.owner.title || '(無題)'}` : '宛先なし';
+    const labels = {delivered: '通知済み', waiting: '通知中', blocked: '通知先が停止中',
+      absent: '通知先が不在', unconfigured: '通知は未設定', failed: '通知に失敗', timeout: '通知が時間切れ'};
+    reviewElement('delivery').textContent = [labels[data.delivery.status], data.owner?.status ? `agent：${data.owner.status}` : ''].filter(Boolean).join(' · ');
     reviewElement('fallback').hidden = !data.fallback;
     reviewElement('message').value = data.fallback || '';
-    const summary = data.reply.summary || '';
-    reviewElement('summary').textContent = summary;
-    const doc = articleFrame.contentDocument;
-    let banner = doc.getElementById('knowledge-review-summary');
-    if (!banner) { banner = doc.createElement('p'); banner.id = 'knowledge-review-summary'; doc.body.prepend(banner); }
-    banner.textContent = summary;
+    reviewElement('summary').textContent = data.reply.summary || 'まだ agent からの返事はありません。';
     const selected = reviewElement('revert').value;
-    reviewElement('revert').replaceChildren(...data.rounds.map(round => new Option(`ラウンド ${round.round}`, round.round)));
-    if (data.rounds.some(round => String(round.round) === selected)) reviewElement('revert').value = selected;
+    const options = ['', ...data.rounds.map(round => String(round.round))];
+    if (JSON.stringify(options) !== JSON.stringify([...reviewElement('revert').options].map(o => o.value))) {
+      reviewElement('revert').replaceChildren(new Option('戻す先を選んでください', ''), ...data.rounds.map(round => new Option(`ラウンド ${round.round} の送信時点`, round.round)));
+      if (options.includes(selected)) reviewElement('revert').value = selected;
+    }
     reviewElement('diff-toggle').disabled = !data.rounds.length;
-    const comments = await commentsApi(`/api/comments?file=${encodeURIComponent(file)}`);
-    if (file === commentsFile) showComments(comments.comments);
+    updateReviewControls();
+    await refreshComments();
   } catch (error) { if (file === commentsFile) commentError.textContent = error.message; }
 }
-reviewElement('verdict').onchange = () => { reviewElement('revert-label').hidden = reviewElement('verdict').value !== 'revert'; };
+reviewElement('verdict').onchange = updateReviewControls;
+reviewElement('revert').onchange = updateReviewControls;
+reviewElement('reload').onclick = () => articleFrame.contentWindow.location.reload();
 reviewElement('submit').onclick = async () => {
   const file = commentsFile;
+  const verdict = reviewElement('verdict').value;
+  const submission = {file, verdict, article_sha256: displayedSha};
+  if (verdict === 'revert') {
+    submission.revertTo = Number(reviewElement('revert').value);
+    if (!submission.revertTo) return;
+    const dialog = reviewElement('confirm');
+    reviewElement('confirm-text').textContent = `ラウンド ${submission.revertTo} の送信時点の本文へ戻すよう agent に頼みます。送信しますか？`;
+    dialog.returnValue = '';
+    dialog.showModal();
+    const confirmed = await new Promise(resolve => dialog.addEventListener('close', () => resolve(dialog.returnValue === 'confirm'), {once: true}));
+    if (!confirmed || file !== commentsFile) return;
+  }
   reviewElement('submit').disabled = true;
+  commentError.textContent = '';
   try {
-    const verdict = reviewElement('verdict').value;
-    const submission = {file, verdict};
-    if (verdict === 'revert') submission.revertTo = Number(reviewElement('revert').value);
     await commentsApi('/api/reviews/submit', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(submission)});
-  } catch (error) { commentError.textContent = error.message; }
+    if (file === commentsFile) reviewElement('verdict').value = 'revise';
+  } catch (error) { if (file === commentsFile) commentError.textContent = error.message; }
   if (file === commentsFile) await refreshReview();
 };
 reviewElement('copy').onclick = async () => {
   try { await navigator.clipboard.writeText(reviewElement('message').value); }
   catch (_) { reviewElement('message').select(); }
 };
+reviewElement('body-toggle').onclick = () => {
+  reviewElement('diff').hidden = true;
+  reviewElement('diff-caption').hidden = true;
+  articleFrame.hidden = false;
+  reviewElement('diff-toggle').setAttribute('aria-pressed', 'false');
+  reviewElement('body-toggle').setAttribute('aria-pressed', 'true');
+};
 reviewElement('diff-toggle').onclick = async () => {
-  const diff = reviewElement('diff');
-  if (!diff.hidden) { diff.hidden = true; articleFrame.hidden = false; return; }
   const file = commentsFile;
-  const round = reviewState?.rounds.at(-1)?.round;
+  const round = reviewState?.round;
   if (!round) return;
   try {
     const data = await commentsApi(`/api/reviews/diff?file=${encodeURIComponent(file)}&round=${round}`);
     if (file !== commentsFile) return;
-    diff.replaceChildren(...data.changes.map(change => {
-      const element = document.createElement(({insert: 'ins', delete: 'del'})[change.kind] || 'span');
-      element.textContent = change.text;
+    reviewElement('diff').replaceChildren(...data.changes.map(change => {
+      const element = node(({insert: 'ins', delete: 'del'})[change.kind] || 'span', change.text);
       return element;
     }));
-    diff.hidden = false;
+    reviewElement('comparison').textContent = `ラウンド ${round} の送信時点 → 現在`;
+    reviewElement('diff-caption').hidden = false;
+    reviewElement('diff').hidden = false;
     articleFrame.hidden = true;
+    reviewElement('diff-toggle').setAttribute('aria-pressed', 'true');
+    reviewElement('body-toggle').setAttribute('aria-pressed', 'false');
   } catch (error) { commentError.textContent = error.message; }
 };
-setInterval(() => { if (commentsFile && commentForm.hidden && !commentList.querySelector('details[open]')) refreshReview(); }, 3000);
+setInterval(() => { if (commentsFile) refreshReview(); }, 3000);

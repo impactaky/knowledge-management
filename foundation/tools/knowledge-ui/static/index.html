@@ -40,6 +40,11 @@
     --dir-text: #334155;
     --preview-bar: rgba(255, 255, 255, 0.9);
     --focus-ring: rgba(37, 99, 235, 0.13);
+    --success: #17653a;
+    --warning: #895800;
+    --danger: #a92e35;
+    --diff-add: #d9f9e2;
+    --diff-delete: #ffe0e0;
     --shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
   }
 
@@ -61,6 +66,11 @@
     --dir-text: #d4d9e2;
     --preview-bar: rgba(24, 26, 32, 0.92);
     --focus-ring: rgba(122, 183, 255, 0.22);
+    --success: #89dfac;
+    --warning: #f2cf7c;
+    --danger: #ffabb2;
+    --diff-add: #173c2a;
+    --diff-delete: #4a242b;
     --shadow: 0 18px 40px rgba(0, 0, 0, 0.34);
   }
 
@@ -80,7 +90,7 @@
     line-height: 1.5;
   }
 
-  button, input { font: inherit; }
+  button, input, select, textarea { font: inherit; }
   button { color: inherit; }
 
   .app {
@@ -431,37 +441,54 @@
     display: flex;
     gap: 12px;
   }
-  #review-diff { flex: 1; overflow: auto; white-space: pre-wrap; padding: 20px; font-family: monospace; }
-  #review-diff[hidden], #article-frame[hidden] { display: none; }
-  #review-diff ins { color: #126b30; background: #d9f9e2; text-decoration: none; }
-  #review-diff del { color: #9b2222; background: #ffe0e0; text-decoration: line-through; }
-  #review-controls textarea, #comments-panel textarea { width: 100%; box-sizing: border-box; }
-  #review-summary { font-weight: bold; }
-  #comments-panel { width: 300px; flex-shrink: 0; overflow: auto; color: var(--text); }
-  #comments-panel[hidden] { display: none; }
-  #comments-panel article { border-bottom: 1px solid var(--line); padding: 12px 0; }
+  #review-confirm { max-width: 440px; padding: 24px; color: var(--text); background: var(--panel); border: 1px solid var(--line-strong); border-radius: 8px; box-shadow: var(--shadow); }
+  #review-confirm::backdrop { background: rgba(0, 0, 0, .4); }
+  #review-confirm form { display: flex; justify-content: flex-end; gap: 8px; }
+  #review-confirm button { font: inherit; padding: 8px 12px; color: var(--text); background: var(--control); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+  .article-column { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; gap: 8px; }
+  .article-toolbar, .thread-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  #review-diff { flex: 1; min-height: 0; overflow: auto; white-space: pre-wrap; padding: 32px; font: 15px/1.8 ui-monospace, monospace; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+  #review-diff[hidden], #article-frame[hidden], #comments-panel [hidden], #comments-panel[hidden], #review-updated[hidden], #review-diff-caption[hidden] { display: none !important; }
+  #review-diff ins, .diff-add { color: var(--success); background: var(--diff-add); text-decoration: underline; }
+  #review-diff del, .diff-delete { color: var(--danger); background: var(--diff-delete); text-decoration: line-through; }
+  #review-diff-caption { padding: 8px 12px; background: var(--panel); border-radius: 6px; }
+  #review-comparison { display: block; }
+  #comments-panel { width: 340px; flex-shrink: 0; min-height: 0; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .review-header, .agent-summary, #review-controls { padding: 12px 16px; flex-shrink: 0; }
+  .review-header { border-bottom: 1px solid var(--line); }
+  #comments-panel h3, #comments-panel p { margin: 0 0 8px; }
+  #review-phase { font-weight: 700; color: var(--accent-text); }
+  #review-questions { margin-left: 8px; color: var(--warning); }
+  .agent-summary { background: var(--panel-soft); }
+  #review-summary { margin: 4px 0 0; }
+  .comment-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 16px; }
+  #review-controls { border-top: 1px solid var(--line); display: grid; gap: 8px; }
+  #comments-panel article { border-bottom: 1px solid var(--line); padding: 16px 0; }
   #comments-panel blockquote, #comments-panel p { white-space: pre-wrap; overflow-wrap: anywhere; }
-  #comments-panel blockquote { margin: 8px 0; padding-left: 8px; border-left: 2px solid var(--line); }
-  #comments-panel button {
-    margin: 4px;
-    padding: 4px 8px;
-    border: 1px solid var(--line);
-    border-radius: 5px;
-    background: var(--control);
-    cursor: pointer;
+  #comments-panel blockquote { margin: 8px 0; padding-left: 10px; border-left: 3px solid var(--line-strong); color: var(--muted); }
+  #comments-panel button, .article-toolbar button, #review-updated button {
+    padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--control); cursor: pointer;
   }
-  #comments-panel button:hover { background: var(--accent-soft); }
-  #comments-panel small { display: block; color: var(--muted); }
-  #comment-body {
-    width: 100%;
-    box-sizing: border-box;
-    font: inherit;
-    color: var(--text);
-    background: var(--control);
-    border: 1px solid var(--line);
-    border-radius: 5px;
+  #comments-panel button:hover, .article-toolbar button:hover { background: var(--accent-soft); }
+  #comments-panel button.primary { background: var(--accent); color: var(--panel); font-weight: 700; border-color: var(--accent); }
+  #comments-panel button.danger { color: var(--danger); }
+  button:disabled { opacity: .55; cursor: default !important; }
+  button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .article-toolbar [aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); }
+  #comments-panel small, #comments-panel time, #review-delivery { color: var(--muted); font-size: 12px; }
+  #comments-panel time, .saved-answer small { display: block; }
+  #comments-panel select, #comments-panel textarea {
+    width: 100%; padding: 8px 10px; color: var(--text); background: var(--control); border: 1px solid var(--line); border-radius: 6px;
   }
-  #comment-error { color: #d45b5b; }
+  #comments-panel textarea { resize: vertical; }
+  #comments-panel select:focus, #comments-panel textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus-ring); }
+  #comments-panel details { margin: 12px 0; padding: 10px; background: var(--panel-soft); border-radius: 6px; }
+  #comments-panel summary { cursor: pointer; font-weight: 600; color: var(--accent-text); }
+  #comments-panel details p { margin-top: 8px; }
+  .agent-response, .saved-answer { margin: 12px 0 !important; }
+  .saved-answer { border-left: 3px solid var(--accent); padding-left: 10px; }
+  #comment-error { color: var(--danger); }
+  #review-updated { color: var(--warning); padding: 8px; background: var(--panel); border: 1px solid var(--warning); border-radius: 6px; }
 
   #article-frame {
     display: block;
@@ -510,8 +537,10 @@
   html[data-hide-comments] #toggle-comments { color: var(--muted); }
   @media (max-width: 1100px) {
     .preview-shell { flex-direction: column; overflow: auto; }
+    .article-column { flex: 1 0 240px; min-height: 240px; }
     #article-frame { flex: 1; min-height: 200px; }
-    #comments-panel { width: auto; max-height: 35vh; flex-shrink: 0; }
+    #comments-panel { width: auto; min-height: 420px; flex-shrink: 0; }
+    .comment-scroll { flex: 0 0 auto; max-height: 35vh; }
   }
 </style>
 </head>
@@ -569,33 +598,52 @@
       </div>
     </header>
     <div class="preview-shell">
-      <div id="review-diff" hidden aria-label="Markdown の差分"></div>
-      <iframe id="article-frame" src="about:blank" title="Article preview"></iframe>
-      <aside id="comments-panel" aria-label="記事のコメント" hidden>
-        <div id="review-controls">
-          <p id="review-owner">宛先なし</p>
-          <label>判定 <select id="review-verdict"><option value="revise">修正して</option><option value="approve">承認</option><option value="revert">差戻し</option></select></label>
-          <label id="review-revert-label" hidden>戻す先 <select id="review-revert"></select></label>
-          <button id="review-submit" type="button">送信</button>
-          <p>承認はレビュー完了です。Stock の判定は会話で確かめます。</p>
-          <p id="review-delivery" role="status"></p>
-          <div id="review-fallback" hidden><label>会話に貼ってください<textarea id="review-message" readonly rows="5"></textarea></label><button id="review-copy" type="button">コピー</button></div>
-          <p id="review-summary"></p>
-          <button id="review-diff-toggle" type="button" disabled>差分</button>
+      <div class="article-column">
+        <div class="article-toolbar" aria-label="記事の表示">
+          <button id="review-body-toggle" type="button" aria-pressed="true">本文に戻る</button>
+          <button id="review-diff-toggle" type="button" aria-pressed="false" disabled>差分を見る</button>
         </div>
-        <h3>コメント</h3>
-        <button id="comment-selection" type="button" hidden>選択箇所にコメント</button>
-        <form id="comment-form" hidden>
-          <label for="comment-body">コメント本文</label>
-          <textarea id="comment-body" rows="4" maxlength="50000"></textarea>
-          <button type="submit">保存</button><button id="comment-cancel" type="button">キャンセル</button>
-        </form>
-        <p id="comment-error" role="alert"></p>
-        <div id="comment-list" aria-live="polite"></div>
+        <div id="review-updated" role="status" hidden>記事が更新されました <button id="review-reload" type="button">読み込み直す</button></div>
+        <div id="review-diff-caption" hidden><strong id="review-comparison"></strong><span class="diff-add">追加（下線）</span> / <span class="diff-delete">削除（打ち消し線）</span></div>
+        <div id="review-diff" hidden aria-label="Markdown の差分"></div>
+        <iframe id="article-frame" src="about:blank" title="Article preview"></iframe>
+      </div>
+      <aside id="comments-panel" aria-label="記事のコメント" hidden>
+        <header class="review-header">
+          <h3>レビュー · <span id="review-round">ラウンド 0</span></h3>
+          <div role="status"><span id="review-phase">状態を確認しています</span><span id="review-questions"></span></div>
+          <div id="review-delivery"></div>
+        </header>
+        <section class="agent-summary" aria-label="agent からの一言"><small>agent から</small><p id="review-summary"></p></section>
+        <div class="comment-scroll">
+          <button id="comment-selection" type="button" hidden>選択箇所にコメント</button>
+          <form id="comment-form" hidden>
+            <label for="comment-body">コメント本文</label>
+            <textarea id="comment-body" rows="4" maxlength="50000"></textarea>
+            <button type="submit">保存</button><button id="comment-cancel" type="button">キャンセル</button>
+          </form>
+          <div id="comment-list"></div>
+        </div>
+        <div id="review-controls">
+          <p id="comment-error" role="alert"></p>
+          <label>判定 <select id="review-verdict"><option value="revise">修正を依頼する</option><option value="approve">レビューを承認する</option><option value="revert">過去の版に戻す</option></select></label>
+          <label id="review-revert-label" hidden>戻す先 <select id="review-revert"></select></label>
+          <small id="review-stock" hidden>承認はレビュー完了です。Stock の判定は会話で確かめます。</small>
+          <small id="review-owner">宛先なし</small>
+          <small id="review-count"></small>
+          <button id="review-submit" class="primary" type="button" disabled>修正依頼を送信</button>
+          <p id="review-waiting" role="status"></p>
+          <div id="review-fallback" hidden><label>会話に貼ってください<textarea id="review-message" readonly rows="3"></textarea></label><button id="review-copy" type="button">手動転送用にコピー</button></div>
+        </div>
       </aside>
     </div>
   </section>
 </main>
+<dialog id="review-confirm" aria-labelledby="review-confirm-title" aria-describedby="review-confirm-text">
+  <h3 id="review-confirm-title">過去の版に戻す依頼の確認</h3>
+  <p id="review-confirm-text"></p>
+  <form method="dialog"><button value="cancel" autofocus>キャンセル</button><button value="confirm">この版へ戻すよう依頼する</button></form>
+</dialog>
 
 <script>
 const state = {
