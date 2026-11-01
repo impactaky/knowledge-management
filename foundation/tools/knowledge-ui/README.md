@@ -67,21 +67,35 @@ Each returns `{comments: [...]}`. To ask an AI to handle feedback, use the MCP
 
 `article_url.py <absolute.md>` prints the comment-panel URL and claims the
 requesting conversation through `KNOWLEDGE_REVIEW_NOTIFIER` when configured.
-Select **修正して**, **承認**, or **差戻し** (with a target round), then **送信**.
-Open comments and the current article are captured once; new comments remain
-possible while waiting, but the next submission requires a reply. Approval ends
-review without a reply and requires a fresh claim before another submission.
-Approval does not authorize Stock: confirm that decision in conversation.
+Select **修正を依頼する** (request changes), **レビューを承認する** (approve review),
+or **過去の版に戻す** (ask the agent to restore a past version). Reverting requires
+a target round and confirmation that the agent will restore its submitted text.
+The verdict resets to request changes on article changes and successful sends.
+Open comments and the displayed article are captured once. The UI sends the
+SHA-256 from the rendered article; a mismatch returns HTTP 409 without saving or
+notifying. If the file changes, reload the article before submitting. Legacy API
+clients may omit `article_sha256` and capture the current file without this check.
 
-The panel shows the recipient title/status and delivery result. Working owners
-may take 30 minutes; blocked owners are shown as waiting for approval. On missing,
-unconfigured or failed delivery, copy the supplied line into the conversation.
-Notifications contain only path, round and verdict, never comment text.
-Agent summaries appear above the article; **?** opens a question and answer field.
-Answers are comments with optional `reply_to` metadata (older sidecars still
-work). Partial/skipped reasons appear on comments; done readings stay in the
-record. **差分** compares the latest submitted Markdown with the current file,
-using green additions and red struck deletions (Japanese characters, Latin words).
+The panel shows the round, whose turn it is, and unanswered question count,
+followed by the agent summary, scrolling comment threads, and a fixed submission
+area with recipient and counts. Delivery and agent availability appear as
+supplementary information. New comments remain possible while waiting; the next
+submission requires a reply. Approval completes review without a reply and
+requires a fresh claim before another submission. Approval does not authorize
+Stock: confirm that decision in conversation (explained when approval is selected).
+Working owners may take 30 minutes. On missing, unconfigured or failed delivery,
+copy the supplied line into the conversation. Notifications contain only path,
+round and verdict, never comment text.
+
+Each thread groups quotation, comment, agent response/reason, question and answers.
+Agent response and comment resolution have separate labels. Unanswered questions
+open automatically. Answers use optional `reply_to` metadata (older sidecars still
+work) and are marked saved until included in the next submission. Polling preserves
+input, focus and disclosure state while progress continues updating. Done readings
+stay in the record. Above the article, **差分を見る** compares the latest submitted
+Markdown with the current file, labels the source/target and legend, and provides
+**本文に戻る**. Additions are green and underlined; deletions are red and struck
+through, with light/dark theme colors (Japanese characters, Latin words).
 Unsent comments, quotations and answers survive reload in localStorage when
 browser storage is available.
 
@@ -117,7 +131,7 @@ Run CLI commands with `uv run --project /path/to/knowledge-ui python
   order skipped for reason `revert`. Approval does not accept `reply`.
 
 API: `GET /api/reviews?file=`, `POST /api/reviews/submit` with
-`{file, verdict, revertTo?}`, `GET /api/reviews/diff?file=&round=`. Notification runs
+`{file, verdict, revertTo?, article_sha256?}`, `GET /api/reviews/diff?file=&round=`. Notification runs
 in the background after the submission response. MCP remains read-only.
 
 ## Notifier and authentication
