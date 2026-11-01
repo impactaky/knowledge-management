@@ -30,7 +30,7 @@ from urllib.parse import quote
 
 import meilisearch
 import yaml
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -93,7 +93,20 @@ SKIP_TREE_DIRS = {
     "node_modules",
 }
 
+from auth import authorized, credentials
+from review import Review
+from starlette.responses import Response
+
+UI_CREDENTIALS = credentials(os.environ)
 app = FastAPI(title="Knowledge Browser")
+
+
+@app.middleware("http")
+async def basic_auth(request, call_next):
+    if UI_CREDENTIALS is not None and not authorized(request.headers.get('authorization', ''), UI_CREDENTIALS):
+        return Response(status_code=401, headers={'WWW-Authenticate': 'Basic realm="knowledge-ui"'})
+    return await call_next(request)
+
 app.mount(
     "/static/browser-assets",
     StaticFiles(directory=BROWSER_ASSET_DIR, check_dir=False),
@@ -864,7 +877,8 @@ class NewComment(BaseModel):
     heading: str = Field(default="", max_length=2000)
     anchor: str = Field(default="", max_length=2000)
     quote: str = Field(min_length=1, max_length=50000)
-    body: str = Field(min_length=1, max_length=50000)
+    body: str = Field(max_length=50000)
+    reply_to: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
 
 
 class CommentStatus(BaseModel):
@@ -878,6 +892,47 @@ def resolve_comment_path(file: str) -> Path:
             raise ValueError("Article is outside package roots")
         return comment_path(file, catalog_path=CATALOG_PATH)
     except (ValueError, OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+class ReviewSubmission(BaseModel):
+    file: str
+    verdict: Literal['revise', 'approve', 'revert']
+    revertTo: int | None = Field(default=None, ge=1)
+
+
+def article_review(file):
+    resolve_comment_path(file)
+    try:
+        return Review(file, CATALOG_PATH)
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get('/api/reviews')
+def review_state(file: str):
+    try:
+        return article_review(file).state()
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post('/api/reviews/submit')
+def submit_review(submission: ReviewSubmission, background_tasks: BackgroundTasks):
+    review = article_review(submission.file)
+    try:
+        number, owner = review.submit(submission.verdict, submission.revertTo)
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    background_tasks.add_task(review.deliver, number, owner)
+    return {'round': number, 'status': 'waiting'}
+
+
+@app.get('/api/reviews/diff')
+def review_diff(file: str, round: int = Query(..., ge=1)):
+    try:
+        return {'changes': article_review(file).diff(round)}
+    except (ValueError, OSError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -900,8 +955,12 @@ def change_comments(file: str, **kwargs):
 
 @app.post("/api/comments")
 def add_comment(comment: NewComment):
-    if not comment.body.strip() or not comment.quote.strip():
-        raise HTTPException(status_code=400, detail="Quote and comment must not be blank")
+    if (comment.body and not comment.body.strip()) or not comment.quote.strip():
+        raise HTTPException(status_code=400, detail="Quote and nonempty comment must not be whitespace")
+    if comment.reply_to:
+        items = list_comments(comment.file)['comments']
+        if not any(item['id'] == comment.reply_to for item in items):
+            raise HTTPException(status_code=400, detail="Reply target not found")
     return change_comments(comment.file, new=comment.model_dump(exclude={"file"}))
 
 

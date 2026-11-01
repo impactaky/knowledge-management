@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
 from urllib.parse import quote
 
@@ -27,7 +28,7 @@ def default_base_url() -> str:
 def build_article_url(file_path: str | Path, *, base_url: str | None = None) -> str:
     absolute_path = Path(file_path).expanduser().resolve()
     base = (base_url or default_base_url()).rstrip("/")
-    return f"{base}/article?file={quote(str(absolute_path), safe='')}"
+    return f"{base}/?file={quote(str(absolute_path), safe='')}"
 
 
 def main() -> int:
@@ -35,6 +36,12 @@ def main() -> int:
     parser.add_argument("file", help="Markdown or executable article path")
     parser.add_argument("--base-url", help="Override the knowledge-ui base URL")
     args = parser.parse_args()
+    from review import Review
+    if os.environ.get('KNOWLEDGE_REVIEW_NOTIFIER'):
+        try:
+            Review(str(Path(args.file).expanduser().resolve())).claim()
+        except (ValueError, OSError) as exc:
+            print(f'Review owner was not recorded: {exc}', file=sys.stderr)
     print(build_article_url(args.file, base_url=args.base_url))
     return 0
 

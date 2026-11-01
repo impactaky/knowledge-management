@@ -19,8 +19,8 @@ def comment_path(path: str | Path, *, catalog_path=None) -> Path:
         raise ValueError("Resolved article must be a .md file")
     if not article.is_file():
         raise ValueError("Article does not exist or is not a file")
-    if ".comments" in article.parts:
-        raise ValueError("A comment sidecar is not an article")
+    if any(part in {".comments", ".reviews"} for part in article.parts + source.parts):
+        raise ValueError("Comment and review sidecars are not articles")
     target = article.parent / ".comments" / f"{article.stem}.md"
     # Do not redirect comment reads/writes, even to a different in-scope article.
     if target.parent.is_symlink() or target.is_symlink():

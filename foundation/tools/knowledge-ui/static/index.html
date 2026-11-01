@@ -431,6 +431,12 @@
     display: flex;
     gap: 12px;
   }
+  #review-diff { flex: 1; overflow: auto; white-space: pre-wrap; padding: 20px; font-family: monospace; }
+  #review-diff[hidden], #article-frame[hidden] { display: none; }
+  #review-diff ins { color: #126b30; background: #d9f9e2; text-decoration: none; }
+  #review-diff del { color: #9b2222; background: #ffe0e0; text-decoration: line-through; }
+  #review-controls textarea, #comments-panel textarea { width: 100%; box-sizing: border-box; }
+  #review-summary { font-weight: bold; }
   #comments-panel { width: 300px; flex-shrink: 0; overflow: auto; color: var(--text); }
   #comments-panel[hidden] { display: none; }
   #comments-panel article { border-bottom: 1px solid var(--line); padding: 12px 0; }
@@ -563,13 +569,25 @@
       </div>
     </header>
     <div class="preview-shell">
+      <div id="review-diff" hidden aria-label="Markdown の差分"></div>
       <iframe id="article-frame" src="about:blank" title="Article preview"></iframe>
       <aside id="comments-panel" aria-label="記事のコメント" hidden>
+        <div id="review-controls">
+          <p id="review-owner">宛先なし</p>
+          <label>判定 <select id="review-verdict"><option value="revise">修正して</option><option value="approve">承認</option><option value="revert">差戻し</option></select></label>
+          <label id="review-revert-label" hidden>戻す先 <select id="review-revert"></select></label>
+          <button id="review-submit" type="button">送信</button>
+          <p>承認はレビュー完了です。Stock の判定は会話で確かめます。</p>
+          <p id="review-delivery" role="status"></p>
+          <div id="review-fallback" hidden><label>会話に貼ってください<textarea id="review-message" readonly rows="5"></textarea></label><button id="review-copy" type="button">コピー</button></div>
+          <p id="review-summary"></p>
+          <button id="review-diff-toggle" type="button" disabled>差分</button>
+        </div>
         <h3>コメント</h3>
         <button id="comment-selection" type="button" hidden>選択箇所にコメント</button>
         <form id="comment-form" hidden>
           <label for="comment-body">コメント本文</label>
-          <textarea id="comment-body" rows="4" required maxlength="50000"></textarea>
+          <textarea id="comment-body" rows="4" maxlength="50000"></textarea>
           <button type="submit">保存</button><button id="comment-cancel" type="button">キャンセル</button>
         </form>
         <p id="comment-error" role="alert"></p>

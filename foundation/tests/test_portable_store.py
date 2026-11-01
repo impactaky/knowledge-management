@@ -254,12 +254,12 @@ def test_article_url_uses_explicit_public_base(monkeypatch, tmp_path):
     from article_url import build_article_url
     monkeypatch.setenv('KNOWLEDGE_UI_BASE_URL', 'http://127.0.0.1:17776/')
     url = build_article_url(tmp_path / 'space name.md')
-    assert url.startswith('http://127.0.0.1:17776/article?file=')
+    assert url.startswith('http://127.0.0.1:17776/?file=')
     assert '%20' in url
     article = tmp_path / 'nested' / 'article.md'
     encoded = build_article_url(article, base_url='http://127.0.0.1:17776')
     assert encoded == (
-        'http://127.0.0.1:17776/article?file=' + quote(str(article.resolve()), safe='')
+        'http://127.0.0.1:17776/?file=' + quote(str(article.resolve()), safe='')
     )
 
 
@@ -275,5 +275,5 @@ def test_article_url_cli_uses_explicit_ui_host_and_port(tmp_path, monkeypatch):
     )
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout.strip() == (
-        'http://127.0.0.1:17776/article?file=' + quote(str(article.resolve()), safe='')
+        'http://127.0.0.1:17776/?file=' + quote(str(article.resolve()), safe='')
     )

@@ -2,3 +2,6 @@
 !/drafts/.gitkeep
 /worklogs/
 /__marimo__/
+
+# Machine-local review owners and article snapshots
+.reviews/

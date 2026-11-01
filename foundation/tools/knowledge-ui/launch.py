@@ -255,6 +255,11 @@ class LauncherConfig:
         if not ui_host_raw or not ui_host_raw.strip():
             raise ConfigurationError("UI_HOST must be a non-empty string.")
         ui_host = ui_host_raw.strip()
+        from auth import credentials
+        try:
+            credentials({**env, 'UI_HOST': ui_host})
+        except ValueError as exc:
+            raise ConfigurationError(str(exc)) from exc
 
         ui_port_str = env.get("UI_PORT", "7776").strip()
         try:

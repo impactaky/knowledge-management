@@ -1,5 +1,5 @@
 """Lossless Markdown comment records and serialized atomic mutations (POSIX)."""
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
 import fcntl
 import json
@@ -39,7 +39,10 @@ def parse(text):
 
 
 def encode(item):
-    metadata = json.dumps({key: item[key] for key in FIELDS[:5]}, ensure_ascii=False)
+    metadata = {key: item[key] for key in FIELDS[:5]}
+    if item.get('reply_to') is not None:
+        metadata['reply_to'] = item['reply_to']
+    metadata = json.dumps(metadata, ensure_ascii=False)
     quote = "\n".join("> " + line for line in item["quote"].split("\n"))
     body = "\n".join("    " + line for line in item["body"].split("\n"))
     return (f'<!-- comment:{item["id"]} -->\n{metadata}\n\n### Quote\n{quote}'
@@ -58,8 +61,8 @@ def locked(target):
         os.close(fd)
 
 
-def mutate(target: Path, *, new=None, comment_id=None, status=None):
-    with locked(target):
+def mutate(target: Path, *, new=None, comment_id=None, status=None, lock_held=False):
+    with nullcontext() if lock_held else locked(target):
         if target.is_symlink() or target.parent.is_symlink():
             raise ValueError("Comment paths must not be symlinks")
         text = target.read_text(encoding="utf-8") if target.exists() else "# Article comments\n\n"

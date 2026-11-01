@@ -13,3 +13,6 @@ local/
 foundation/tools/knowledge-ui/static/browser-assets
 
 .tools/
+
+# Machine-local review owners and article snapshots
+.reviews/
