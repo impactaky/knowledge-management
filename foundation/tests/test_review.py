@@ -265,3 +265,78 @@ def test_optional_general_reply(store):
     reply['general'] = {'reading': 'Only part of the general request was clear', 'status': 'partial'}
     review.reply(1, reply)
     assert json.loads((review.round_dir(1) / 'reply.json').read_text())['general'] == reply['general']
+
+
+def test_displayed_article_sha_guards_submission(store, tmp_path, monkeypatch):
+    review, client, _ = store
+    log = fake_notifier(tmp_path, monkeypatch)
+    review.claim()
+    original = '# Guide\r\n\r\n合成 text.\r\n'.encode()
+    review.article.write_bytes(original)
+    digest = hashlib.sha256(original).hexdigest()
+    page = client.get('/article', params={'file': str(review.article)})
+    assert page.status_code == 200
+    assert f'<meta name="knowledge-article-sha256" content="{digest}">' in page.text
+    assert review.state()['article_sha256'] == digest
+    review.article.write_text('# Guide\n\nChanged synthetic text.\n')
+    before = log.read_text()
+    response = client.post('/api/reviews/submit', json={
+        'file': str(review.article), 'verdict': 'approve', 'article_sha256': digest})
+    assert response.status_code == 409
+    assert review.rounds() == []
+    assert not (review.root / 'rounds').exists()
+    assert log.read_text() == before  # Neither snapshot nor notification on conflict.
+    current = review.state()['article_sha256']
+    assert client.post('/api/reviews/submit', json={
+        'file': str(review.article), 'verdict': 'revise', 'article_sha256': current}).status_code == 200
+    assert json.loads((review.round_dir(1) / 'submission.json').read_text())['base_sha'] == current
+    review.reply(1, review.skeleton(1))
+    # Legacy clients may omit the digest; they snapshot the current article.
+    assert client.post('/api/reviews/submit', json={
+        'file': str(review.article), 'verdict': 'approve'}).status_code == 200
+
+
+def test_review_progress_and_current_round_questions(store, tmp_path, monkeypatch):
+    review, _, _ = store
+    fake_notifier(tmp_path, monkeypatch)
+    review.claim()
+
+    def progress():
+        state = review.state()
+        return state['round'], state['phase'], state['open_questions']
+
+    assert progress() == (0, 'reviewing', 0)
+    original = comment(review)
+    # An answer from an earlier round does not answer this round's question.
+    comment(review, 'Earlier answer', reply_to=original['id'])
+    number, owner = review.submit('revise')
+    assert progress() == (1, 'waiting_reply', 0)
+    review.deliver(number, owner)
+    assert progress() == (1, 'waiting_reply', 0)
+    reply = review.skeleton(1)
+    for item in reply['orders']:
+        item.update(status='partial', reading='Revised', reason='Confirm the term')
+    reply['orders'][0].update(needsConfirm=True, question='Use this term?')
+    review.reply(1, reply)
+    assert progress() == (1, 'reviewing', 1)
+    answer = comment(review, 'Use it', reply_to=original['id'])
+    assert progress() == (1, 'reviewing', 0)
+    mutate(review.sidecar, comment_id=answer['id'])
+    assert progress() == (1, 'reviewing', 1)
+    review.submit('approve')
+    assert progress() == (2, 'complete', 0)
+    review.claim()
+    assert progress() == (2, 'reviewing', 0)
+
+
+@pytest.mark.parametrize('delivery', ['failed', 'timeout', 'blocked', 'absent'])
+def test_blocked_phase_without_reply(store, tmp_path, monkeypatch, delivery):
+    review, _, _ = store
+    fake_notifier(tmp_path, monkeypatch)
+    review.claim()
+    review.submit('revise')
+    from review import write_json
+    write_json(review.round_dir(1) / 'delivery.json', {'status': delivery})
+    assert review.state()['phase'] == 'blocked'
+    review.reply(1, review.skeleton(1))
+    assert review.state()['phase'] == 'reviewing'

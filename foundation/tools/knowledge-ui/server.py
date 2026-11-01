@@ -16,6 +16,7 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import html
 import os
 import re
@@ -436,7 +437,8 @@ def _heading_text(token: Token) -> str:
 
 def render_markdown(file_path: Path, *, embed: bool = False) -> str:
     """Markdownを完全なHTMLページとして返す。目次・アンカー・KaTeX・Mermaid付き。"""
-    text = file_path.read_text(encoding="utf-8", errors="replace")
+    source = file_path.read_bytes()
+    text = source.decode("utf-8", errors="replace")
 
     env: dict = {}
     tokens = _md.parse(text, env)
@@ -489,6 +491,7 @@ def render_markdown(file_path: Path, *, embed: bool = False) -> str:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="knowledge-article-sha256" content="{hashlib.sha256(source).hexdigest()}">
 <title>{html.escape(file_path.name)}</title>
 <script>
 (() => {{
@@ -899,6 +902,7 @@ class ReviewSubmission(BaseModel):
     file: str
     verdict: Literal['revise', 'approve', 'revert']
     revertTo: int | None = Field(default=None, ge=1)
+    article_sha256: str | None = None
 
 
 def article_review(file):
@@ -921,7 +925,7 @@ def review_state(file: str):
 def submit_review(submission: ReviewSubmission, background_tasks: BackgroundTasks):
     review = article_review(submission.file)
     try:
-        number, owner = review.submit(submission.verdict, submission.revertTo)
+        number, owner = review.submit(submission.verdict, submission.revertTo, submission.article_sha256)
     except (ValueError, OSError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     background_tasks.add_task(review.deliver, number, owner)

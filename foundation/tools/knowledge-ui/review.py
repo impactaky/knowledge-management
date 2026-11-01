@@ -125,7 +125,7 @@ class Review:
             return load(self.root / 'owner.json', {}).get('at') != submission.get('owner_at')
         return (directory / 'reply.json').exists()
 
-    def submit(self, verdict, revert_to=None):
+    def submit(self, verdict, revert_to=None, article_sha256=None):
         if verdict not in VERDICTS:
             raise ValueError('Unknown verdict')
         with self.lock():
@@ -139,9 +139,12 @@ class Review:
             number = numbers[-1] + 1 if numbers else 1
             text = self.article.read_bytes()
             text.decode('utf-8')
+            digest = hashlib.sha256(text).hexdigest()
+            if article_sha256 is not None and article_sha256 != digest:
+                raise ValueError('記事が更新されました。読み込み直してから送信してください。')
             owner = load(self.root / 'owner.json')
             submission = {'verdict': verdict, 'comment_ids': [c['id'] for c in self.comments() if c['status'] == 'open'],
-                          'base_sha': hashlib.sha256(text).hexdigest(), 'at': now(),
+                          'base_sha': digest, 'at': now(),
                           'owner_at': (owner or {}).get('at')}
             if verdict == 'revert':
                 submission['revertTo'] = revert_to
@@ -184,7 +187,14 @@ class Review:
             latest = self.round_dir(numbers[-1]) if numbers else None
             reply = load(latest / 'reply.json', {}) if latest else {}
             delivery = load(latest / 'delivery.json', {}) if latest else {}
-            result = {'rounds': rounds, 'can_submit': self.can_submit(), 'owner': None,
+            # Answers saved after this submission belong to its questions.
+            answered = {c.get('reply_to') for c in self.comments()
+                        if rounds and c['created'] > rounds[-1]['at']}
+            result = {'round': numbers[-1] if numbers else 0,
+                      'article_sha256': hashlib.sha256(self.article.read_bytes()).hexdigest(),
+                      'open_questions': sum(bool(o.get('needsConfirm')) and o['comment_id'] not in answered
+                                            for o in reply.get('orders', [])),
+                      'rounds': rounds, 'can_submit': self.can_submit(), 'owner': None,
                       'reply': {'summary': reply.get('summary', ''), 'orders': [
                           {k: v for k, v in item.items() if k in {'comment_id', 'status', 'reason', 'needsConfirm', 'question'}}
                           for item in reply.get('orders', [])]}, 'delivery': delivery}
@@ -193,6 +203,14 @@ class Review:
         if owner:
             code, status = notifier('status', self.root / 'owner.json')
             result['owner'] = status if not code else {'status': 'absent'}
+        if not result['can_submit'] and rounds[-1]['verdict'] == 'approve':
+            result['phase'] = 'complete'
+        elif result['can_submit']:
+            result['phase'] = 'reviewing'
+        elif delivery.get('status') in {'failed', 'timeout', 'blocked', 'absent', 'unconfigured'} or (result['owner'] or {}).get('status') in {'blocked', 'absent'}:
+            result['phase'] = 'blocked'
+        else:
+            result['phase'] = 'waiting_reply'
         return result
 
     def skeleton(self, number):
