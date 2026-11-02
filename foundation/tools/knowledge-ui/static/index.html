@@ -453,17 +453,30 @@
   #review-diff del, .diff-delete { color: var(--danger); background: var(--diff-delete); text-decoration: line-through; }
   #review-diff-caption { padding: 8px 12px; background: var(--panel); border-radius: 6px; }
   #review-comparison { display: block; }
-  #comments-panel { width: 340px; flex-shrink: 0; min-height: 0; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-  .review-header, .agent-summary, #review-controls { padding: 12px 16px; flex-shrink: 0; }
-  .review-header { border-bottom: 1px solid var(--line); }
-  #comments-panel h3, #comments-panel p { margin: 0 0 8px; }
+  #comments-panel { width: 400px; flex-shrink: 0; min-height: 0; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  /* Fixed rows stay one or two lines tall so the comment thread keeps most of the height. */
+  .review-header, #review-controls { padding: 8px 14px; flex-shrink: 0; }
+  .review-header { border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+  .review-header h3 { font-size: 14px; margin: 0 !important; }
+  .review-header [role="status"] { font-size: 13px; }
+  #comments-panel p { margin: 0 0 8px; }
   #review-phase { font-weight: 700; color: var(--accent-text); }
   #review-questions { margin-left: 8px; color: var(--warning); }
-  .agent-summary { background: var(--panel-soft); }
-  #review-summary { margin: 4px 0 0; }
-  .comment-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 16px; }
-  #review-controls { border-top: 1px solid var(--line); display: grid; gap: 8px; }
-  #comments-panel article { border-bottom: 1px solid var(--line); padding: 16px 0; }
+  .agent-summary { background: var(--panel-soft); margin: 10px 0 0; padding: 8px 10px; border-radius: 6px; }
+  #review-summary { margin: 2px 0 0 !important; }
+  .comment-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 14px 12px; }
+  #review-controls { border-top: 1px solid var(--line); display: grid; gap: 6px; }
+  .submit-row { display: flex; gap: 8px; }
+  .submit-row select { flex: 1; min-width: 0; }
+  .submit-row button { flex-shrink: 0; }
+  .submit-meta { display: flex; flex-wrap: wrap; gap: 0 10px; }
+  #review-waiting:empty, #comment-error:empty { display: none; }
+  #comment-selection { position: sticky; top: 0; z-index: 1; width: 100%; margin-top: 10px; background: var(--accent); color: var(--panel); font-weight: 700; border-color: var(--accent); }
+  #comment-form { position: sticky; top: 0; z-index: 1; margin: 10px 0 0; padding: 10px; display: grid; gap: 6px; background: var(--panel-soft); border: 1px solid var(--accent); border-radius: 6px; }
+  #comment-form textarea { min-height: 9em; }
+  .comment-heading { border: none !important; background: none !important; padding: 0 !important; color: var(--accent-text); font-size: 13px; text-align: left; }
+  .comment-heading:hover { text-decoration: underline; }
+  #comments-panel article { border-bottom: 1px solid var(--line); padding: 12px 0; }
   #comments-panel blockquote, #comments-panel p { white-space: pre-wrap; overflow-wrap: anywhere; }
   #comments-panel blockquote { margin: 8px 0; padding-left: 10px; border-left: 3px solid var(--line-strong); color: var(--muted); }
   #comments-panel button, .article-toolbar button, #review-updated button {
@@ -614,24 +627,26 @@
           <div role="status"><span id="review-phase">状態を確認しています</span><span id="review-questions"></span></div>
           <div id="review-delivery"></div>
         </header>
-        <section class="agent-summary" aria-label="agent からの一言"><small>agent から</small><p id="review-summary"></p></section>
         <div class="comment-scroll">
           <button id="comment-selection" type="button" hidden>選択箇所にコメント</button>
           <form id="comment-form" hidden>
+            <blockquote id="comment-quote"></blockquote>
             <label for="comment-body">コメント本文</label>
-            <textarea id="comment-body" rows="4" maxlength="50000"></textarea>
-            <button type="submit">保存</button><button id="comment-cancel" type="button">キャンセル</button>
+            <textarea id="comment-body" rows="6" maxlength="50000"></textarea>
+            <div class="submit-row"><button type="submit" class="primary">保存</button><button id="comment-cancel" type="button">キャンセル</button></div>
           </form>
+          <section class="agent-summary" aria-label="agent からの一言"><small>agent から</small><p id="review-summary"></p></section>
           <div id="comment-list"></div>
         </div>
         <div id="review-controls">
           <p id="comment-error" role="alert"></p>
-          <label>判定 <select id="review-verdict"><option value="revise">修正を依頼する</option><option value="approve">レビューを承認する</option><option value="revert">過去の版に戻す</option></select></label>
           <label id="review-revert-label" hidden>戻す先 <select id="review-revert"></select></label>
           <small id="review-stock" hidden>承認はレビュー完了です。Stock の判定は会話で確かめます。</small>
-          <small id="review-owner">宛先なし</small>
-          <small id="review-count"></small>
-          <button id="review-submit" class="primary" type="button" disabled>修正依頼を送信</button>
+          <div class="submit-row">
+            <select id="review-verdict" aria-label="判定"><option value="revise">修正を依頼する</option><option value="approve">レビューを承認する</option><option value="revert">過去の版に戻す</option></select>
+            <button id="review-submit" class="primary" type="button" disabled>修正依頼を送信</button>
+          </div>
+          <div class="submit-meta"><small id="review-owner">宛先なし</small><small id="review-count"></small></div>
           <p id="review-waiting" role="status"></p>
           <div id="review-fallback" hidden><label>会話に貼ってください<textarea id="review-message" readonly rows="3"></textarea></label><button id="review-copy" type="button">手動転送用にコピー</button></div>
         </div>

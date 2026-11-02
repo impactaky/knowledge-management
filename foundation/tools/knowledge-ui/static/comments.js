@@ -20,9 +20,11 @@ commentBody.addEventListener('input', saveComposition);
 function restoreComposition() {
   try {
     const saved = JSON.parse(localStorage.getItem(`knowledge-comment:${commentsFile}`) || 'null');
-    if (saved?.passage && typeof saved.body === 'string') {
+    // Only reopen an unfinished comment; a bare selection is saved too but is not a draft.
+    if (saved?.passage && typeof saved.body === 'string' && saved.body.trim()) {
       selectedPassage = saved.passage;
       commentBody.value = saved.body;
+      document.getElementById("comment-quote").textContent = saved.passage.quote || "";
       commentForm.hidden = false;
     }
   } catch (_) { /* A missing or corrupt draft does not prevent commenting. */ }
@@ -38,6 +40,18 @@ async function commentsApi(url, options) {
 
 let displayedSha = "";
 let currentComments = [];
+let autoReloadedSha = "";
+let pendingScroll = null;
+
+// Follow the agent's edits on its own unless the reader is mid-composition; the banner remains the fallback.
+function autoReload(sha) {
+  const typing = [...commentList.querySelectorAll('textarea')].some(t => t.value.trim() || t === document.activeElement);
+  const selecting = articleFrame.contentDocument?.getSelection()?.toString().trim();
+  if (!sha || sha === autoReloadedSha || !commentForm.hidden || typing || selecting) return;
+  autoReloadedSha = sha;
+  pendingScroll = articleFrame.contentWindow.scrollY;
+  articleFrame.contentWindow.location.reload();
+}
 
 function node(tag, text, className) {
   const element = document.createElement(tag);
@@ -93,6 +107,7 @@ function showComments(items) {
       if (target) target.scrollIntoView({behavior: 'smooth'});
     });
     heading.dataset.control = 'heading';
+    heading.className = 'comment-heading';
     replacement.append(heading, node('blockquote', item.quote), node('p', `あなた：${item.body}`), timestamp(item.created));
     if (reply) {
       const labels = {done: '対応済み', partial: '一部対応', skipped: '未対応'};
@@ -182,6 +197,7 @@ async function changeComment(id, status) {
 }
 
 commentSelection.onclick = () => {
+  document.getElementById("comment-quote").textContent = selectedPassage?.quote || "";
   commentForm.hidden = false;
   commentBody.focus();
 };
@@ -236,6 +252,8 @@ articleFrame.addEventListener("load", () => {
   if (url.pathname !== "/article" || !file.toLowerCase().endsWith(".md")) return;
   commentsFile = file;
   displayedSha = articleFrame.contentDocument.querySelector('meta[name="knowledge-article-sha256"]')?.content || "";
+  if (pendingScroll !== null) articleFrame.contentWindow.scrollTo(0, pendingScroll);
+  pendingScroll = null;
   commentsPanel.hidden = false;
   updateReviewControls();
   restoreComposition();
@@ -304,6 +322,7 @@ async function refreshReview() {
     }
     reviewElement('diff-toggle').disabled = !data.rounds.length;
     updateReviewControls();
+    if (displayedSha && data.article_sha256 !== displayedSha) autoReload(data.article_sha256);
     await refreshComments();
   } catch (error) { if (file === commentsFile) commentError.textContent = error.message; }
 }
