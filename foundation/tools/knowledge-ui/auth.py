@@ -35,7 +35,23 @@ def credentials(env):
         raise ValueError('Non-loopback UI requires a readable, valid KNOWLEDGE_UI_BASIC_AUTH_FILE') from None
 
 
+_verified = set()
+
+
 def authorized(header, credential):
+    # PBKDF2 costs ~0.1s and runs on every request, so remember digests of headers that already passed.
+    key = hashlib.sha256(repr((header, credential)).encode()).digest()
+    if key in _verified:
+        return True
+    if verify(header, credential):
+        if len(_verified) >= 64:
+            _verified.clear()
+        _verified.add(key)
+        return True
+    return False
+
+
+def verify(header, credential):
     try:
         scheme, payload = header.split(' ', 1)
         if scheme.lower() != 'basic':
