@@ -49,7 +49,7 @@ class OptionalPackageIndexTests(unittest.TestCase):
 
     def tree(self):
         with patch.object(server, 'CATALOG_PATH', self.catalog):
-            return asyncio.run(server.tree())['packages']
+            return server.tree()['packages']
 
     def test_directory_without_index_and_direct_file_check_tree_and_read(self):
         self.assertEqual(knowledge_check.check(self.catalog), [])

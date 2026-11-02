@@ -92,6 +92,8 @@ SKIP_TREE_DIRS = {
     "__marimo__",
     "__pycache__",
     "node_modules",
+    # Worklogs hold task records and their caches (venvs, uv caches), not articles; search excludes them too.
+    "worklogs",
 }
 
 from auth import authorized, credentials
@@ -979,8 +981,12 @@ def delete_comment(comment_id: str, file: str = Query(...)):
 
 
 @app.get("/api/tree")
-async def tree():
-    """CATALOG.md 由来パッケージ配下の記事ツリーを返す。"""
+def tree():
+    """CATALOG.md 由来パッケージ配下の記事ツリーを返す。
+
+    全パッケージを走査するため数十秒かかることがある。同期関数にしてスレッドで実行し、
+    その間も他のリクエスト（コメントの保存やレビューの状態）を止めない。
+    """
     packages = []
     catalog_packages = parse_catalog_packages(CATALOG_PATH)
     for pkg in catalog_packages:
@@ -1009,7 +1015,7 @@ async def tree():
 
 
 @app.get("/api/drafts")
-async def drafts():
+def drafts():
     """このストア直下の drafts/ にある判定待ち記事ツリーを返す。"""
     children = []
     if DRAFTS_ROOT.exists() and DRAFTS_ROOT.is_dir():
