@@ -494,7 +494,7 @@ def render_markdown(file_path: Path, *, embed: bool = False) -> str:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="knowledge-article-sha256" content="{hashlib.sha256(source).hexdigest()}">
-<title>{html.escape(file_path.name)}</title>
+<title>{html.escape(_read_markdown_title(file_path))}</title>
 <script>
 (() => {{
   function applyDisplayTheme(theme) {{

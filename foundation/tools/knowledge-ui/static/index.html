@@ -682,6 +682,15 @@ const draftsPane = document.getElementById("drafts-pane");
 const articleFrame = document.getElementById("article-frame");
 const previewName = document.getElementById("preview-name");
 const previewPath = document.getElementById("preview-path");
+// Name the browser tab after the article so several open tabs stay distinguishable.
+articleFrame.addEventListener("load", () => {
+  let title = "";
+  try {
+    title = articleFrame.contentDocument.title.trim();
+  } catch (_) {}
+  if (!title && state.selectedLabel) title = state.selectedLabel.split("/").pop().trim();
+  document.title = title ? `${title} - Knowledge Browser` : "Knowledge Browser";
+});
 const openLiveButton = document.getElementById("open-live");
 const openNewButton = document.getElementById("open-new");
 const themeToggleButton = document.getElementById("theme-toggle");
