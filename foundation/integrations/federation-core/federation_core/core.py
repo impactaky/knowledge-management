@@ -341,13 +341,18 @@ def _is_probably_text(path: Path) -> bool:
 
 
 def _iter_files(root: Path, *, index_only: bool) -> Iterable[Path]:
-    for path in sorted(root.rglob("*")):
-        try:
-            relative_parts = path.relative_to(root).parts
-        except ValueError:
-            continue
-        if any(part in SKIP_DIRS or part.startswith(".") for part in relative_parts):
-            continue
+    candidates: list[Path] = []
+    for directory, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
+        dirnames[:] = [
+            name for name in dirnames
+            if name not in SKIP_DIRS and not name.startswith(".")
+        ]
+        candidates.extend(
+            Path(directory) / name for name in filenames
+            if name not in SKIP_DIRS and not name.startswith(".")
+        )
+    # Sorting each directory alone would change the existing global path order.
+    for path in sorted(candidates):
         try:
             is_file = path.is_file()
         except OSError:

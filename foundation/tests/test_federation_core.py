@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import os
 from pathlib import Path
 import runpy
 import sys
@@ -441,6 +442,65 @@ class FederationCoreTests(unittest.TestCase):
         self.assertEqual(len(result["article_results"]), 5)
         self.assertTrue(result["truncated"])
         self.assertEqual(result["fulltext_results"], [])
+
+    def test_live_search_prunes_excluded_directories_before_enumeration(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            catalog, package = make_fixture(Path(tmp))
+            for name in sorted(core.SKIP_DIRS | {".hidden", ".cache"}):
+                child = package / "visible" / name / "nested"
+                child.mkdir(parents=True)
+                (child / "INDEX.md").write_text("- specification secret\n", encoding="utf-8")
+            original_scandir = os.scandir
+
+            def guarded_scandir(path):
+                relative = Path(path).relative_to(package)
+                self.assertFalse(
+                    any(part in core.SKIP_DIRS or part.startswith(".") for part in relative.parts),
+                    f"Enumerated excluded directory: {relative}",
+                )
+                return original_scandir(path)
+
+            with patch.object(os, "scandir", side_effect=guarded_scandir):
+                shallow = federation_core.search("specification", deep=False, catalog_path=catalog)
+                grep = federation_core.grep("needle", catalog_path=catalog)
+            self.assertEqual(len(shallow["index_results"]), 1)
+            self.assertTrue(grep["fulltext_results"])
+
+    def test_iter_files_preserves_global_order_filters_and_symlinks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "package"
+            root.mkdir()
+            for name in ["z.txt", "a/z.txt", "a/INDEX.md", "a.txt", "CONTEXT.md",
+                         ".hidden.md", "image.png", "large.txt"]:
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("visible", encoding="utf-8")
+            (root / "large.txt").write_bytes(b"x" * 2_000_001)
+            outside = Path(tmp) / "outside"
+            outside.mkdir()
+            (outside / "INDEX.md").write_text("outside", encoding="utf-8")
+            (root / "directory-link").symlink_to(outside, target_is_directory=True)
+            (root / "file-link.txt").symlink_to(root / "z.txt")
+            (root / "escape.txt").symlink_to(outside / "INDEX.md")
+            (root / "broken.txt").symlink_to(root / "missing")
+            expected = sorted(root / name for name in [
+                "z.txt", "a/z.txt", "a/INDEX.md", "a.txt", "CONTEXT.md",
+                "file-link.txt", "escape.txt",
+            ])
+            original_scandir = os.scandir
+
+            def guarded_scandir(path):
+                self.assertFalse(Path(path).is_symlink(), "Traversed directory symlink")
+                return original_scandir(path)
+
+            with patch.object(os, "scandir", side_effect=guarded_scandir):
+                self.assertEqual(list(core._iter_files(root, index_only=False)), expected)
+                self.assertEqual(list(core._iter_files(root, index_only=True)), sorted([
+                    root / "a/INDEX.md", root / "CONTEXT.md",
+                ]))
+            scope = core.PublicationScope(root)
+            self.assertTrue(scope.allows(root / "file-link.txt"))
+            self.assertFalse(scope.allows(root / "escape.txt"))
 
     def test_grep_skips_hidden_virtualenv_before_stat(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
